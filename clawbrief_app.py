@@ -3,14 +3,15 @@ ClawBrief: Private Personal AI Knowledge & Skill Operator
 Track: Personal AI Track (NVIDIA + Nebius Hackathon)
 License: MIT
 
-Features:
-1. Tiered NVIDIA Nemotron Router on Nebius Token Factory (https://api.tokenfactory.nebius.com/v1)
-   - Fast Triage: nvidia/Nemotron-3_5-Lightning ($0.06/1M input)
-   - Daily Synthesis: nvidia/nemotron-3-super-120b-a12b ($0.30/1M input)
-   - Deep Skill Authoring: nvidia/Nemotron-3-Ultra-550b-a55b ($1.00/1M input)
-2. Persistent Memory & Self-Evolving Reusable Skills (Hermes Agent pattern)
-3. Sandboxed Skill Execution via NVIDIA NemoClaw / OpenShell boundary
-4. Asynchronous Nightly Briefing via Nebius Serverless Jobs API
+Dual-Provider Architecture:
+- Dev Mode (Default Now): NVIDIA Build Free NIM API (https://integrate.api.nvidia.com/v1)
+  * Fast Triage: nvidia/nemotron-3.5-lightning-30b-a3b
+  * Daily Synthesis: nvidia/nemotron-3.5-super-vl-120b-a12b
+  * Deep Skill Authoring: nvidia/nemotron-3-ultra-550b-a55b
+- Final Submission Mode: Nebius Token Factory (https://api.tokenfactory.nebius.com/v1)
+  * Fast Triage: nvidia/Nemotron-3_5-Lightning ($0.06/1M input)
+  * Daily Synthesis: nvidia/nemotron-3-super-120b-a12b ($0.30/1M input)
+  * Deep Skill Authoring: nvidia/Nemotron-3-Ultra-550b-a55b ($1.00/1M input)
 """
 
 import json
@@ -40,32 +41,67 @@ except ImportError:
 
 
 # =====================================================================
-# 1. NEBIUS TOKEN FACTORY SMART MODEL ROUTER
+# 1. DUAL-PROVIDER SMART MODEL ROUTER (NVIDIA BUILD + NEBIUS)
 # =====================================================================
 
-NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
-
-NEMOTRON_MODELS = {
-    "nano_lightning": {
-        "id": "nvidia/Nemotron-3_5-Lightning",
-        "label": "Nemotron 3.5 Lightning (Fast Triage)",
-        "input_cost_per_1m": 0.06,
-        "output_cost_per_1m": 0.24,
-        "context_window": "1.0M",
+PROVIDERS = {
+    "nvidia_build": {
+        "name": "NVIDIA Build Free NIM API (Dev Mode)",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "env_key": "NVIDIA_API_KEY",
+        "key_placeholder": "nvapi-...",
+        "models": {
+            "nano_lightning": {
+                "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+                "label": "Nemotron 3.5 Lightning 30B (Fast Triage)",
+                "input_cost_per_1m": 0.06,
+                "output_cost_per_1m": 0.24,
+                "context_window": "1.0M",
+            },
+            "super": {
+                "id": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+                "label": "Nemotron 3.5 Super VL 120B (Daily Workflows)",
+                "input_cost_per_1m": 0.30,
+                "output_cost_per_1m": 0.90,
+                "context_window": "1.0M",
+            },
+            "ultra": {
+                "id": "nvidia/nemotron-3-ultra-550b-a55b",
+                "label": "Nemotron 3 Ultra 550B (Deep Skill Authoring)",
+                "input_cost_per_1m": 1.00,
+                "output_cost_per_1m": 3.00,
+                "context_window": "1.0M",
+            },
+        },
     },
-    "super": {
-        "id": "nvidia/nemotron-3-super-120b-a12b",
-        "label": "Nemotron 3 Super 120B (Daily Workflows)",
-        "input_cost_per_1m": 0.30,
-        "output_cost_per_1m": 0.90,
-        "context_window": "262K",
-    },
-    "ultra": {
-        "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
-        "label": "Nemotron 3 Ultra 550B (Deep Reasoning & Skill Authoring)",
-        "input_cost_per_1m": 1.00,
-        "output_cost_per_1m": 3.00,
-        "context_window": "1.0M",
+    "nebius": {
+        "name": "Nebius Token Factory (Final Submission Mode)",
+        "base_url": "https://api.tokenfactory.nebius.com/v1",
+        "env_key": "NEBIUS_API_KEY",
+        "key_placeholder": "nebius-api-key...",
+        "models": {
+            "nano_lightning": {
+                "id": "nvidia/Nemotron-3_5-Lightning",
+                "label": "Nemotron 3.5 Lightning (Fast Triage)",
+                "input_cost_per_1m": 0.06,
+                "output_cost_per_1m": 0.24,
+                "context_window": "1.0M",
+            },
+            "super": {
+                "id": "nvidia/nemotron-3-super-120b-a12b",
+                "label": "Nemotron 3 Super 120B (Daily Workflows)",
+                "input_cost_per_1m": 0.30,
+                "output_cost_per_1m": 0.90,
+                "context_window": "262K",
+            },
+            "ultra": {
+                "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                "label": "Nemotron 3 Ultra 550B (Deep Skill Authoring)",
+                "input_cost_per_1m": 1.00,
+                "output_cost_per_1m": 3.00,
+                "context_window": "1.0M",
+            },
+        },
     },
 }
 
@@ -73,6 +109,7 @@ NEMOTRON_MODELS = {
 @dataclass
 class RoutingEvent:
     timestamp: str
+    provider: str
     task_type: str
     selected_tier: str
     model_id: str
@@ -83,19 +120,23 @@ class RoutingEvent:
     credits_saved_pct: float
 
 
-class NebiusTokenFactoryRouter:
-    """Routes Personal AI tasks across NVIDIA Nemotron tiers on Nebius Token Factory."""
+class DualNemotronRouter:
+    """Routes Personal AI tasks across NVIDIA Build (free dev) or Nebius Token Factory (final submission)."""
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("NEBIUS_API_KEY", "")
+    def __init__(self, provider_key: str = "nvidia_build", api_key: Optional[str] = None):
+        self.provider_key = provider_key if provider_key in PROVIDERS else "nvidia_build"
+        self.provider_cfg = PROVIDERS[self.provider_key]
+        env_var = self.provider_cfg["env_key"]
+        self.api_key = api_key or os.environ.get(env_var, "")
         self.client = (
-            OpenAI(api_key=self.api_key, base_url=NEBIUS_BASE_URL)
+            OpenAI(api_key=self.api_key, base_url=self.provider_cfg["base_url"])
             if (HAS_OPENAI and self.api_key)
             else None
         )
 
     def select_tier(self, prompt: str, force_tier: str = "auto") -> str:
-        if force_tier in NEMOTRON_MODELS:
+        models = self.provider_cfg["models"]
+        if force_tier in models:
             return force_tier
         lower = prompt.lower()
         skill_keywords = [
@@ -131,12 +172,21 @@ class NebiusTokenFactoryRouter:
         force_tier: str = "auto",
     ) -> tuple[str, RoutingEvent]:
         tier = self.select_tier(user_prompt, force_tier=force_tier)
-        model_info = NEMOTRON_MODELS[tier]
+        models = self.provider_cfg["models"]
+        model_info = models[tier]
         model_id = model_info["id"]
         start = time.perf_counter()
 
         if self.client:
             try:
+                extra_body = {}
+                if tier == "ultra" and self.provider_key == "nvidia_build":
+                    extra_body = {
+                        "chat_template_kwargs": {
+                            "enable_thinking": False,
+                            "force_nonempty_content": True,
+                        }
+                    }
                 resp = self.client.chat.completions.create(
                     model=model_id,
                     messages=[
@@ -144,6 +194,7 @@ class NebiusTokenFactoryRouter:
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.3,
+                    extra_body=extra_body if extra_body else None,
                 )
                 reply = resp.choices[0].message.content or ""
                 tokens = getattr(resp.usage, "total_tokens", 650) or 650
@@ -158,8 +209,7 @@ class NebiusTokenFactoryRouter:
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
         avg_rate = (model_info["input_cost_per_1m"] + model_info["output_cost_per_1m"]) / 2.0
         ultra_rate = (
-            NEMOTRON_MODELS["ultra"]["input_cost_per_1m"]
-            + NEMOTRON_MODELS["ultra"]["output_cost_per_1m"]
+            models["ultra"]["input_cost_per_1m"] + models["ultra"]["output_cost_per_1m"]
         ) / 2.0
 
         actual_cost = (tokens / 1_000_000) * avg_rate
@@ -168,6 +218,7 @@ class NebiusTokenFactoryRouter:
 
         event = RoutingEvent(
             timestamp=datetime.now().strftime("%H:%M:%S"),
+            provider=self.provider_key,
             task_type=task_type,
             selected_tier=tier,
             model_id=model_id,
@@ -179,11 +230,11 @@ class NebiusTokenFactoryRouter:
         )
         return reply, event
 
-    @staticmethod
     def _demo_fallback_response(
-        tier: str, task_type: str, user_prompt: str, note: Optional[str] = None
+        self, tier: str, task_type: str, user_prompt: str, note: Optional[str] = None
     ) -> str:
-        model_id = NEMOTRON_MODELS[tier]["id"]
+        model_id = self.provider_cfg["models"][tier]["id"]
+        provider_label = self.provider_cfg["name"]
         if task_type == "skill_generation":
             return (
                 "# Auto-Generated Reusable Hermes Skill: markdown_action_extractor.py\n"
@@ -194,10 +245,10 @@ class NebiusTokenFactoryRouter:
                 "    deadlines = re.findall(r'\\b(?:Oct|Nov|Dec|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep)[a-z]*\\s+\\d{1,2}\\b', text)\n"
                 "    return {'action_count': len(actions), 'actions': actions, 'detected_dates': deadlines}\n\n"
                 "if __name__ == '__main__':\n"
-                "    sample = 'TODO: Submit ClawBrief demo by Oct 30\\nACTION: Record 3-min video on Oct 29'\n"
+                "    sample = 'TODO: Submit ClawBrief demo by Oct 30\\nACTION: Switch provider toggle to Nebius on Oct 28'\n"
                 "    print(extract_actions(sample))\n"
             )
-        header = f"**[{model_id} via Nebius Token Factory]**"
+        header = f"**[{model_id} via {provider_label}]**"
         if note:
             header += f" *(Offline Demo Fallback — API notice: {note})*"
         return (
@@ -238,7 +289,7 @@ class HermesSkillVault:
                 {
                     "id": "mem-2",
                     "category": "Daily Schedule",
-                    "summary": "NVIDIA + Nebius Hackathon submission due October 30th (3-min YouTube demo + MIT repo).",
+                    "summary": "Prototyping on NVIDIA Build free API now; switching toggle to Nebius Token Factory before Oct 30 submission.",
                     "source_file": "workspace/tasks/october_deadlines.md",
                     "created_at": "2026-10-22",
                 },
@@ -250,11 +301,11 @@ class HermesSkillVault:
                 {
                     "name": "deadline_and_action_harvester",
                     "description": "Scans local Markdown study/meeting notes and extracts action items and dates.",
-                    "authored_by": "nvidia/Nemotron-3-Ultra-550b-a55b",
+                    "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
                     "sandbox_verified": True,
                     "code": (
                         "import re\n"
-                        "text = 'TODO: Finalize Nebius Token Factory router by Oct 24\\nACTION: Record 3-minute YouTube demo on Oct 29'\n"
+                        "text = 'TODO: Prototype with free NVIDIA_API_KEY by Oct 24\\nACTION: Switch to NEBIUS_API_KEY for final video on Oct 29'\n"
                         "tasks = [line for line in text.splitlines() if 'TODO' in line or 'ACTION' in line]\n"
                         "dates = re.findall(r'Oct\\s+\\d+', text)\n"
                         "print({'extracted_tasks': len(tasks), 'dates': dates, 'items': tasks})\n"
@@ -315,7 +366,7 @@ class OpenShellSandbox:
             script_path = Path(tmpdir) / "skill_task.py"
             script_path.write_text(code)
 
-            # Enforce stripped environment so credentials never leak into skill runtime
+            # Enforce stripped environment so API keys never leak into skill runtime
             safe_env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"}
 
             try:
@@ -420,12 +471,23 @@ def render_streamlit_app() -> None:
 
     with st.sidebar:
         st.title("🛡️ ClawBrief Control")
-        st.caption("Personal AI Track • NVIDIA Nemotron + Nebius Token Factory")
+        st.caption("Personal AI Track • Dual-Provider Nemotron Router")
+
+        provider_key = st.radio(
+            "Inference Provider",
+            options=["nvidia_build", "nebius"],
+            index=0,
+            format_func=lambda k: PROVIDERS[k]["name"],
+            help="Use NVIDIA Build (free 1,000 credits at build.nvidia.com) for dev, then switch to Nebius Token Factory for final submission!",
+        )
+        active_cfg = PROVIDERS[provider_key]
+
         api_key = st.text_input(
-            "Nebius Token Factory API Key",
-            value=os.environ.get("NEBIUS_API_KEY", ""),
+            f"{active_cfg['env_key']} ({provider_key})",
+            value=os.environ.get(active_cfg["env_key"], ""),
             type="password",
-            help="Connects to https://api.tokenfactory.nebius.com/v1",
+            placeholder=active_cfg["key_placeholder"],
+            help=f"Endpoint: {active_cfg['base_url']}",
         )
         force_tier = st.selectbox(
             "Nemotron Routing Policy",
@@ -433,14 +495,14 @@ def render_streamlit_app() -> None:
             format_func=lambda x: (
                 "Auto-Route (Stretch Credits)"
                 if x == "auto"
-                else NEMOTRON_MODELS[x]["label"]
+                else active_cfg["models"][x]["label"]
             ),
         )
         st.markdown("### OpenShell / NemoClaw Status")
         st.success(f"Sandbox Active: `{sandbox.sandbox_name}`")
         st.caption("Whitelisted Path: `./workspace/notes` (Zero external credential leakage)")
 
-        st.markdown("### Token Factory Telemetry")
+        st.markdown("### Router Telemetry")
         logs: List[Dict[str, Any]] = st.session_state.routing_log
         if logs:
             avg_saved = sum(item["credits_saved_pct"] for item in logs) / len(logs)
@@ -448,15 +510,15 @@ def render_streamlit_app() -> None:
             st.metric("Avg Credits Saved vs Ultra", f"{avg_saved:.1f}%")
             st.metric("Avg Response Latency", f"{avg_lat:.0f} ms")
         else:
-            st.info("Run a prompt or skill to see live Token Factory telemetry.")
+            st.info("Run a prompt or skill to see live model routing telemetry.")
 
-    router = NebiusTokenFactoryRouter(api_key=api_key)
+    router = DualNemotronRouter(provider_key=provider_key, api_key=api_key)
     jobs_client = NebiusServerlessJobsClient()
 
     st.title("ClawBrief: Private Knowledge & Self-Evolving Skill Operator")
     st.write(
-        "An always-on, privacy-first personal assistant powered by **NVIDIA Nemotron** on "
-        "**Nebius Token Factory**, **Hermes Agent** persistent memory, and **NVIDIA NemoClaw / OpenShell** sandboxing."
+        f"**Active Endpoint:** `{active_cfg['base_url']}` ({active_cfg['name']}) • "
+        "**Memory & Skills:** Hermes Agent • **Sandbox:** NVIDIA NemoClaw / OpenShell"
     )
 
     tab1, tab2, tab3 = st.tabs(
@@ -470,17 +532,25 @@ def render_streamlit_app() -> None:
     with tab1:
         col_left, col_right = st.columns([3, 2])
         with col_left:
-            st.subheader("Ask ClawBrief or Ingest Local Notes")
+            st.subheader("Ask ClawBrief or Upload Local Markdown Notes")
+            uploaded_note = st.file_uploader(
+                "Optional: Drop a local .md or .txt study/meeting note into the OpenShell workspace",
+                type=["md", "txt"],
+            )
+            default_text = (
+                "Summarize my study notes on multi-agent memory and extract my high-priority "
+                "deadlines for the October 30th hackathon submission."
+            )
+            if uploaded_note is not None:
+                default_text = uploaded_note.read().decode("utf-8", errors="ignore")
+
             sample_prompt = st.text_area(
                 "Personal Workflow Request or Local Markdown Note:",
-                value=(
-                    "Summarize my study notes on multi-agent memory and extract my high-priority "
-                    "deadlines for the October 30th hackathon submission."
-                ),
-                height=120,
+                value=default_text,
+                height=130,
             )
             save_to_mem = st.checkbox("Persist synthesized takeaway into Hermes Long-Term Memory", value=True)
-            if st.button("Execute via Nebius Token Factory Router", type="primary"):
+            if st.button("Execute via Smart Nemotron Router", type="primary"):
                 memories_ctx = json.dumps(vault.list_memories(), indent=2)
                 sys_prompt = (
                     "You are ClawBrief, a privacy-first Personal AI running inside an NVIDIA OpenShell sandbox. "
@@ -494,16 +564,17 @@ def render_streamlit_app() -> None:
                 )
                 st.session_state.routing_log.insert(0, asdict(event))
                 if save_to_mem:
+                    source_name = uploaded_note.name if uploaded_note else "openshell://local_notes"
                     vault.add_memory(
                         category="Synthesized Brief",
                         summary=sample_prompt[:120],
-                        source_file="openshell://local_notes",
+                        source_file=source_name,
                     )
                 st.markdown("#### Agent Response")
                 st.markdown(reply)
                 st.info(
-                    f"Routed to `{event.model_id}` in **{event.latency_ms} ms** • "
-                    f"Estimated Credits Saved vs Ultra-only: **{event.credits_saved_pct}%**"
+                    f"Provider: `{event.provider}` • Model: `{event.model_id}` in **{event.latency_ms} ms** • "
+                    f"Credits Saved vs Ultra-only: **{event.credits_saved_pct}%**"
                 )
 
         with col_right:
@@ -516,33 +587,31 @@ def render_streamlit_app() -> None:
     with tab2:
         st.subheader("Generate & Sandbox-Test Reusable Hermes Skills")
         st.write(
-            "Escalates to **Nemotron 3 Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`) to author reusable Python "
+            f"Escalates to **Nemotron 3 Ultra** (`{active_cfg['models']['ultra']['id']}`) to author reusable Python "
             "automation scripts and verifies them inside the isolated **OpenShell** boundary."
         )
         skill_goal = st.text_input(
             "Describe a repetitive personal task to turn into a reusable skill:",
             value="Build a skill that extracts TODO items, action owners, and October dates from meeting notes.",
         )
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("Author & Verify New Skill with Nemotron 3 Ultra"):
-                code_reply, event = router.complete(
-                    system_prompt="Write a self-contained Python 3 script using only the standard library.",
-                    user_prompt=skill_goal,
-                    task_type="skill_generation",
-                    force_tier="ultra",
-                )
-                st.session_state.routing_log.insert(0, asdict(event))
-                clean_code = code_reply.replace("```python", "").replace("```", "").strip()
-                sbx_res = sandbox.run_skill_code(clean_code)
-                vault.save_skill(
-                    name=f"custom_skill_{len(vault.list_skills()) + 1}",
-                    description=skill_goal,
-                    code=clean_code,
-                    authored_by=event.model_id,
-                )
-                st.success(f"Skill authored by `{event.model_id}` and verified in OpenShell!")
-                st.json(sbx_res)
+        if st.button("Author & Verify New Skill with Nemotron 3 Ultra"):
+            code_reply, event = router.complete(
+                system_prompt="Write a self-contained Python 3 script using only the standard library.",
+                user_prompt=skill_goal,
+                task_type="skill_generation",
+                force_tier="ultra",
+            )
+            st.session_state.routing_log.insert(0, asdict(event))
+            clean_code = code_reply.replace("```python", "").replace("```", "").strip()
+            sbx_res = sandbox.run_skill_code(clean_code)
+            vault.save_skill(
+                name=f"custom_skill_{len(vault.list_skills()) + 1}",
+                description=skill_goal,
+                code=clean_code,
+                authored_by=event.model_id,
+            )
+            st.success(f"Skill authored by `{event.model_id}` ({event.provider}) and verified in OpenShell!")
+            st.json(sbx_res)
 
         st.markdown("#### Saved Reusable Skills Library")
         for idx, sk in enumerate(vault.list_skills()):
@@ -572,26 +641,29 @@ def render_streamlit_app() -> None:
 
 
 def run_cli_self_test() -> None:
-    print("=== ClawBrief CLI Self-Test ===")
-    router = NebiusTokenFactoryRouter()
+    print("=== ClawBrief Dual-Provider CLI Self-Test ===")
     vault = HermesSkillVault()
     sandbox = OpenShellSandbox()
     jobs = NebiusServerlessJobsClient()
 
-    reply, ev1 = router.complete(
+    # 1. Test NVIDIA Build Free API mode (default for dev)
+    nv_router = DualNemotronRouter(provider_key="nvidia_build")
+    _, ev_nv = nv_router.complete(
         system_prompt="You are ClawBrief.",
         user_prompt="Quickly tag my study note on multi-agent memory.",
         task_type="quick_triage",
     )
-    print(f"[1] Fast Route -> {ev1.model_id} (Saved {ev1.credits_saved_pct}% credits vs Ultra)")
+    print(f"[1] NVIDIA Build Dev Mode -> {ev_nv.model_id} (Saved {ev_nv.credits_saved_pct}% credits)")
 
-    code_reply, ev2 = router.complete(
+    # 2. Test Nebius Token Factory mode (for final submission)
+    nb_router = DualNemotronRouter(provider_key="nebius")
+    _, ev_nb = nb_router.complete(
         system_prompt="Write a Python script.",
         user_prompt="Build a skill to extract deadlines from local notes.",
         task_type="skill_generation",
         force_tier="ultra",
     )
-    print(f"[2] Deep Route -> {ev2.model_id} ({ev2.latency_ms} ms)")
+    print(f"[2] Nebius Submission Mode -> {ev_nb.model_id} ({ev_nb.latency_ms} ms)")
 
     sbx_out = sandbox.run_skill_code(vault.list_skills()[0]["code"])
     print(f"[3] OpenShell Sandbox Execution Exit Code: {sbx_out['exit_code']} | Output: {sbx_out['stdout']}")

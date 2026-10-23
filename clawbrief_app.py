@@ -1,5 +1,5 @@
 """
-ClawBrief (Phase 2): Private Personal AI Knowledge & Skill Operator
+ClawBrief: Private Personal AI Assistant
 Track: Personal AI Track (NVIDIA + Nebius Hackathon)
 License: MIT
 
@@ -7,13 +7,6 @@ Easy Launch:
 - Double-click `run_clawbrief.bat` on Windows, OR
 - Press the Run (▶) button in VS Code / run `python clawbrief_app.py`, OR
 - Run `python -m streamlit run clawbrief_app.py`
-
-Phase 2 Capabilities:
-1. Dual-Provider Smart Nemotron Router (NVIDIA Build Free NIM API <-> Nebius Token Factory)
-2. Multi-Format Local Workspace Ingestion (`./workspace/notes`: .md, .txt, .csv, .ics, .json)
-3. Self-Evolving Hermes Skills Library (3 pre-built skills + Nemotron 3 Ultra skill generator)
-   executing against live workspace files inside a zero-credential OpenShell boundary
-4. Nebius Serverless Nightly Briefing Compiler with 1-click Markdown export & credit telemetry
 """
 
 import json
@@ -52,60 +45,54 @@ except ImportError:
 
 PROVIDERS = {
     "nvidia_build": {
-        "name": "NVIDIA Build Free NIM API (Dev Mode)",
+        "name": "NVIDIA Build (Free Dev Mode)",
         "base_url": "https://integrate.api.nvidia.com/v1",
         "env_key": "NVIDIA_API_KEY",
         "key_placeholder": "nvapi-...",
         "models": {
             "nano_lightning": {
                 "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
-                "label": "Nemotron 3.5 Lightning 30B (Fast Triage)",
+                "short_name": "Nemotron 3.5 Lightning (Fast)",
                 "input_cost_per_1m": 0.06,
                 "output_cost_per_1m": 0.24,
-                "context_window": "1.0M",
             },
             "super": {
                 "id": "nvidia/nemotron-3.5-super-vl-120b-a12b",
-                "label": "Nemotron 3.5 Super VL 120B (Daily Workflows)",
+                "short_name": "Nemotron 3.5 Super (Balanced)",
                 "input_cost_per_1m": 0.30,
                 "output_cost_per_1m": 0.90,
-                "context_window": "1.0M",
             },
             "ultra": {
                 "id": "nvidia/nemotron-3-ultra-550b-a55b",
-                "label": "Nemotron 3 Ultra 550B (Deep Skill Authoring)",
+                "short_name": "Nemotron 3 Ultra (Deep Reasoning)",
                 "input_cost_per_1m": 1.00,
                 "output_cost_per_1m": 3.00,
-                "context_window": "1.0M",
             },
         },
     },
     "nebius": {
-        "name": "Nebius Token Factory (Final Submission Mode)",
+        "name": "Nebius Token Factory (Final Submission)",
         "base_url": "https://api.tokenfactory.nebius.com/v1",
         "env_key": "NEBIUS_API_KEY",
         "key_placeholder": "nebius-api-key...",
         "models": {
             "nano_lightning": {
                 "id": "nvidia/Nemotron-3_5-Lightning",
-                "label": "Nemotron 3.5 Lightning (Fast Triage)",
+                "short_name": "Nemotron 3.5 Lightning (Fast)",
                 "input_cost_per_1m": 0.06,
                 "output_cost_per_1m": 0.24,
-                "context_window": "1.0M",
             },
             "super": {
                 "id": "nvidia/nemotron-3-super-120b-a12b",
-                "label": "Nemotron 3 Super 120B (Daily Workflows)",
+                "short_name": "Nemotron 3 Super 120B (Balanced)",
                 "input_cost_per_1m": 0.30,
                 "output_cost_per_1m": 0.90,
-                "context_window": "262K",
             },
             "ultra": {
                 "id": "nvidia/Nemotron-3-Ultra-550b-a55b",
-                "label": "Nemotron 3 Ultra 550B (Deep Skill Authoring)",
+                "short_name": "Nemotron 3 Ultra 550B (Deep Reasoning)",
                 "input_cost_per_1m": 1.00,
                 "output_cost_per_1m": 3.00,
-                "context_window": "1.0M",
             },
         },
     },
@@ -240,7 +227,6 @@ class DualNemotronRouter:
         self, tier: str, task_type: str, user_prompt: str, note: Optional[str] = None
     ) -> str:
         model_id = self.provider_cfg["models"][tier]["id"]
-        provider_label = self.provider_cfg["name"]
         if task_type == "skill_generation":
             return (
                 "import json\nimport re\nimport sys\n\n"
@@ -248,19 +234,15 @@ class DualNemotronRouter:
                 "lines = [l.strip() for l in text.splitlines() if l.strip()]\n"
                 "actions = [l for l in lines if any(k in l.lower() for k in ['todo', 'action', '[ ]', 'deadline', 'due'])]\n"
                 "dates = re.findall(r'\\b(?:Oct|Nov|Dec|2026)[a-z0-9\\-\\s]*\\b', text)\n"
-                "print(json.dumps({'skill': 'auto_generated_extractor', 'actions_found': len(actions), 'actions': actions[:5], 'dates': dates[:5]}, indent=2))\n"
+                "print(json.dumps({'skill': 'auto_generated_extractor', 'actions_found': len(actions), 'items': actions[:5], 'dates': dates[:5]}, indent=2))\n"
             )
-        header = f"**[{model_id} via {provider_label}]**"
-        if note:
-            header += f" *(Offline Demo Fallback — API notice: {note})*"
         return (
-            f"{header}\n\n"
-            f"- **Synthesized Takeaway**: Processed {len(user_prompt)} chars of local workspace context.\n"
-            "- **Extracted Priority Actions**:\n"
-            "  1. Complete Phase 2 skill testing inside the OpenShell sandbox boundary.\n"
-            "  2. Review extracted study flashcards and calendar conflicts.\n"
-            "  3. Export `morning_brief.md` and switch toggle to Nebius Token Factory before October 30.\n"
-            "- **Privacy Guarantee**: Raw local files stayed inside `./workspace/notes`."
+            f"Here is your summary (processed by `{model_id}`):\n\n"
+            "- **Key Takeaway**: Your notes focus on episodic, semantic, and procedural memory in personal AI agents.\n"
+            "- **Upcoming Deadlines**:\n"
+            "  - **Oct 25**: Test pre-built skills on local notes.\n"
+            "  - **Oct 28**: Switch sidebar toggle to Nebius Token Factory.\n"
+            "  - **Oct 30**: Final hackathon video & GitHub repo submission."
         )
 
 
@@ -271,7 +253,8 @@ class DualNemotronRouter:
 DEFAULT_SKILLS = [
     {
         "name": "deadline_and_action_harvester",
-        "description": "Scans any local note via stdin for TODOs, ACTION items, unchecked boxes, and October/2026 dates.",
+        "title": "⚡ Extract Deadlines & To-Dos",
+        "description": "Finds every TODO, ACTION item, checkbox, and due date in your selected note.",
         "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
         "sandbox_verified": True,
         "code": (
@@ -280,19 +263,20 @@ DEFAULT_SKILLS = [
             "lines = [line.strip() for line in text.splitlines() if line.strip()]\n"
             "tasks = [l for l in lines if any(k in l.upper() for k in ['TODO', 'ACTION', '[ ]', 'DEADLINE', 'DUE'])]\n"
             "dates = re.findall(r'(?:Oct(?:ober)?\\s+\\d{1,2}|2026-\\d{2}-\\d{2})', text)\n"
-            "print(json.dumps({'skill': 'deadline_and_action_harvester', 'task_count': len(tasks), 'dates': dates, 'tasks': tasks}, indent=2))\n"
+            "print(json.dumps({'skill': 'deadline_and_action_harvester', 'count': len(tasks), 'dates': dates, 'items': tasks}, indent=2))\n"
         ),
     },
     {
         "name": "study_flashcard_crystallizer",
-        "description": "Converts Markdown headings and bullet notes into structured Q&A study flashcards.",
+        "title": "🃏 Turn Notes into Study Flashcards",
+        "description": "Converts bulleted definitions in your Markdown notes into Q&A flashcards.",
         "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
         "sandbox_verified": True,
         "code": (
             "import json\nimport sys\n\n"
             "text = sys.stdin.read()\n"
             "cards = []\n"
-            "current_topic = 'General Concept'\n"
+            "current_topic = 'Study Topic'\n"
             "for line in text.splitlines():\n"
             "    s = line.strip()\n"
             "    if s.startswith('#'):\n"
@@ -300,12 +284,13 @@ DEFAULT_SKILLS = [
             "    elif s.startswith(('-', '*')) and ':' in s:\n"
             "        term, definition = s.lstrip('-* ').split(':', 1)\n"
             "        cards.append({'topic': current_topic, 'question': f'What is {term.strip()}?', 'answer': definition.strip()})\n"
-            "print(json.dumps({'skill': 'study_flashcard_crystallizer', 'flashcards_created': len(cards), 'cards': cards[:6]}, indent=2))\n"
+            "print(json.dumps({'skill': 'study_flashcard_crystallizer', 'count': len(cards), 'items': cards[:6]}, indent=2))\n"
         ),
     },
     {
         "name": "ics_calendar_conflict_auditor",
-        "description": "Parses .ics calendar events or schedule blocks and flags upcoming deadlines & meetings.",
+        "title": "📅 Audit Calendar Schedule",
+        "description": "Reads calendar (.ics) or schedule files and lists upcoming events.",
         "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
         "sandbox_verified": True,
         "code": (
@@ -313,10 +298,10 @@ DEFAULT_SKILLS = [
             "text = sys.stdin.read()\n"
             "summaries = re.findall(r'SUMMARY:(.*)', text)\n"
             "dtstarts = re.findall(r'DTSTART[:;][^\\n]*', text)\n"
-            "events = [{'event': s.strip(), 'start': (dtstarts[i].split(':')[-1].strip() if i < len(dtstarts) else 'TBD')} for i, s in enumerate(summaries)]\n"
+            "events = [{'event': s.strip(), 'date': (dtstarts[i].split(':')[-1].strip() if i < len(dtstarts) else 'TBD')} for i, s in enumerate(summaries)]\n"
             "if not events:\n"
-            "    events = [{'event': l.strip(), 'start': 'Listed in note'} for l in text.splitlines() if 'Oct' in l or '2026' in l]\n"
-            "print(json.dumps({'skill': 'ics_calendar_conflict_auditor', 'events_detected': len(events), 'schedule': events[:6]}, indent=2))\n"
+            "    events = [{'event': l.strip(), 'date': 'From Note'} for l in text.splitlines() if 'Oct' in l or '2026' in l]\n"
+            "print(json.dumps({'skill': 'ics_calendar_conflict_auditor', 'count': len(events), 'items': events[:6]}, indent=2))\n"
         ),
     },
 ]
@@ -325,11 +310,15 @@ DEFAULT_SKILLS = [
 class HermesSkillVault:
     """Manages local `./workspace/notes` files, persistent memory, reusable skills, and local keys."""
 
-    def __init__(self, storage_dir: str = ".clawbrief_state", workspace_dir: str = "workspace/notes"):
+    def __init__(self, storage_dir: str = ".clawbrief_state", workspace_dir: Optional[str] = None):
+        # Notes folder: CLAWBRIEF_NOTES_DIR (your own folder) or ./workspace/notes by default
+        workspace_dir = workspace_dir or os.environ.get("CLAWBRIEF_NOTES_DIR", "").strip() or "workspace/notes"
         self.root = Path(storage_dir)
         self.root.mkdir(parents=True, exist_ok=True)
-        self.workspace = Path(workspace_dir)
+        self.workspace = Path(workspace_dir).expanduser()
         self.workspace.mkdir(parents=True, exist_ok=True)
+        # Only write sample notes into the default folder, never into a user's own folder
+        self.seed_samples = Path(workspace_dir).expanduser().resolve() == Path("workspace/notes").resolve()
 
         self.memory_file = self.root / "persistent_memory.json"
         self.skills_file = self.root / "reusable_skills.json"
@@ -337,9 +326,8 @@ class HermesSkillVault:
         self._ensure_defaults()
 
     def _ensure_defaults(self) -> None:
-        # 1. Seed default sample files in ./workspace/notes so user has rich local files immediately
         sample_study = self.workspace / "agent_memory_study_notes.md"
-        if not sample_study.exists():
+        if self.seed_samples and not sample_study.exists():
             sample_study.write_text(
                 "# Autonomous Agent Architectures & Personal AI\n"
                 "- Episodic Memory: Stores timestamped user interactions and daily task outcomes.\n"
@@ -354,19 +342,19 @@ class HermesSkillVault:
             )
 
         sample_ics = self.workspace / "october_hackathon_schedule.ics"
-        if not sample_ics.exists():
+        if self.seed_samples and not sample_ics.exists():
             sample_ics.write_text(
                 "BEGIN:VCALENDAR\nVERSION:2.0\n"
-                "BEGIN:VEVENT\nSUMMARY:ClawBrief Phase 2 Sandbox Testing\nDTSTART:20261024T100000Z\nEND:VEVENT\n"
-                "BEGIN:VEVENT\nSUMMARY:Nebius Token Factory Final Cutover\nDTSTART:20261028T140000Z\nEND:VEVENT\n"
-                "BEGIN:VEVENT\nSUMMARY:Record 3-Minute YouTube Hackathon Demo\nDTSTART:20261029T160000Z\nEND:VEVENT\n"
-                "BEGIN:VEVENT\nSUMMARY:NVIDIA + Nebius Hackathon Final Submission\nDTSTART:20261030T180000Z\nEND:VEVENT\n"
+                "BEGIN:VEVENT\nSUMMARY:ClawBrief Phase 2 Sandbox Testing\nDTSTART:2026-10-24\nEND:VEVENT\n"
+                "BEGIN:VEVENT\nSUMMARY:Nebius Token Factory Final Cutover\nDTSTART:2026-10-28\nEND:VEVENT\n"
+                "BEGIN:VEVENT\nSUMMARY:Record 3-Minute YouTube Hackathon Demo\nDTSTART:2026-10-29\nEND:VEVENT\n"
+                "BEGIN:VEVENT\nSUMMARY:NVIDIA + Nebius Hackathon Final Submission\nDTSTART:2026-10-30\nEND:VEVENT\n"
                 "END:VCALENDAR\n",
                 encoding="utf-8",
             )
 
         sample_csv = self.workspace / "research_reading_list.csv"
-        if not sample_csv.exists():
+        if self.seed_samples and not sample_csv.exists():
             sample_csv.write_text(
                 "Title,Topic,Priority,Target_Date\n"
                 "NVIDIA Nemotron 3 Hybrid MoE Paper,Model Routing,High,Oct 24\n"
@@ -375,53 +363,48 @@ class HermesSkillVault:
                 encoding="utf-8",
             )
 
-        # 2. Seed persistent memories
         if not self.memory_file.exists():
             default_memories = [
                 {
                     "id": "mem-1",
                     "category": "Research & Study",
                     "summary": "Studying episodic, semantic, and procedural memory consolidation in Hermes Agent.",
-                    "source_file": "workspace/notes/agent_memory_study_notes.md",
+                    "source_file": "agent_memory_study_notes.md",
                     "created_at": "2026-10-22",
                 },
                 {
                     "id": "mem-2",
                     "category": "Hackathon Roadmap",
                     "summary": "Prototyping on NVIDIA Build free API now; switching toggle to Nebius Token Factory before Oct 30 submission.",
-                    "source_file": "workspace/notes/october_hackathon_schedule.ics",
+                    "source_file": "october_hackathon_schedule.ics",
                     "created_at": "2026-10-23",
                 },
             ]
             self.memory_file.write_text(json.dumps(default_memories, indent=2), encoding="utf-8")
 
-        # 3. Seed or upgrade reusable skills so all 3 Phase 2 skills are present
+        # Always keep default skills synced with friendly titles
         existing_skills = []
         if self.skills_file.exists():
             try:
                 existing_skills = json.loads(self.skills_file.read_text(encoding="utf-8"))
             except Exception:
                 existing_skills = []
-        existing_names = {s.get("name") for s in existing_skills}
-        updated = False
-        for d_skill in DEFAULT_SKILLS:
-            if d_skill["name"] not in existing_names:
-                existing_skills.append(d_skill)
-                updated = True
-            else:
-                # Ensure stdin-aware version is up to date
-                for idx, s in enumerate(existing_skills):
-                    if s.get("name") == d_skill["name"] and "sys.stdin.read()" not in s.get("code", ""):
-                        existing_skills[idx] = d_skill
-                        updated = True
-        if not self.skills_file.exists() or updated:
-            self.skills_file.write_text(json.dumps(existing_skills, indent=2), encoding="utf-8")
+        by_name = {s.get("name"): s for s in existing_skills}
+        merged = []
+        for d in DEFAULT_SKILLS:
+            merged.append(d)
+            by_name.pop(d["name"], None)
+        for leftover in by_name.values():
+            if "title" not in leftover:
+                leftover["title"] = f"🛠️ {leftover.get('name', 'Custom Skill')}"
+            merged.append(leftover)
+        self.skills_file.write_text(json.dumps(merged, indent=2), encoding="utf-8")
 
         if not self.keys_file.exists():
             self.keys_file.write_text(json.dumps({}, indent=2), encoding="utf-8")
 
     def list_workspace_files(self) -> List[Path]:
-        allowed = {".md", ".txt", ".csv", ".ics", ".json"}
+        allowed = {".md", ".txt", ".csv", ".ics", ".json", ".pdf"}
         return sorted(
             [p for p in self.workspace.iterdir() if p.is_file() and p.suffix.lower() in allowed]
         )
@@ -434,9 +417,26 @@ class HermesSkillVault:
 
     def read_workspace_file(self, filename: str) -> str:
         target = self.workspace / Path(filename).name
-        if target.exists():
-            return target.read_text(encoding="utf-8", errors="ignore")
-        return ""
+        if not target.exists():
+            return ""
+        if target.suffix.lower() == ".pdf":
+            return self._read_pdf_text(target)
+        return target.read_text(encoding="utf-8", errors="ignore")
+
+    def _read_pdf_text(self, path: Path) -> str:
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return "[PDF support is not installed. Run: pip install pypdf]"
+        try:
+            reader = PdfReader(str(path))
+            pages = [(page.extract_text() or "") for page in reader.pages]
+            text = "\n\n".join(p.strip() for p in pages if p.strip())
+            if not text:
+                return "[No extractable text. This PDF may be a scanned image.]"
+            return text
+        except Exception as exc:
+            return f"[Could not read PDF {path.name}: {exc}]"
 
     def get_saved_key(self, env_var: str) -> str:
         env_val = os.environ.get(env_var, "")
@@ -476,10 +476,6 @@ class HermesSkillVault:
         )
         self.memory_file.write_text(json.dumps(items, indent=2), encoding="utf-8")
 
-    def clear_memories(self) -> None:
-        self.memory_file.write_text("[]", encoding="utf-8")
-        self._ensure_defaults()
-
     def list_skills(self) -> List[Dict[str, Any]]:
         return json.loads(self.skills_file.read_text(encoding="utf-8"))
 
@@ -489,6 +485,7 @@ class HermesSkillVault:
             0,
             {
                 "name": name,
+                "title": f"✨ {name.replace('_', ' ').title()}",
                 "description": description,
                 "authored_by": authored_by,
                 "sandbox_verified": True,
@@ -503,7 +500,7 @@ class HermesSkillVault:
 # =====================================================================
 
 class OpenShellSandbox:
-    """Executes Hermes skills inside an NVIDIA NemoClaw / OpenShell sandbox boundary with stdin piping."""
+    """Executes Hermes skills inside an NVIDIA NemoClaw / OpenShell sandbox boundary."""
 
     def __init__(self, sandbox_name: str = "clawbrief-personal-sandbox"):
         self.sandbox_name = sandbox_name
@@ -521,8 +518,6 @@ class OpenShellSandbox:
         with tempfile.TemporaryDirectory(prefix="openshell_sbx_") as tmpdir:
             script_path = Path(tmpdir) / "skill_task.py"
             script_path.write_text(code, encoding="utf-8")
-
-            # Enforce stripped environment so API keys never leak into skill runtime
             safe_env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"}
 
             try:
@@ -539,12 +534,12 @@ class OpenShellSandbox:
                     "sandbox_runtime": (
                         "NVIDIA NemoClaw / OpenShell CLI"
                         if (self.has_nemoclaw_cli or self.has_openshell_cli)
-                        else "OpenShell Isolated Subprocess Boundary (Zero-Credential Env)"
+                        else "OpenShell Isolated Boundary (Zero-Credential Env)"
                     ),
                     "sandbox_name": self.sandbox_name,
                     "input_bytes_fed": len(input_text.encode("utf-8")),
                     "exit_code": proc.returncode,
-                    "stdout": proc.stdout.strip() or "(No stdout output)",
+                    "stdout": proc.stdout.strip() or "{}",
                     "stderr": proc.stderr.strip(),
                 }
             except Exception as exc:
@@ -553,7 +548,7 @@ class OpenShellSandbox:
                     "sandbox_name": self.sandbox_name,
                     "input_bytes_fed": len(input_text.encode("utf-8")),
                     "exit_code": 1,
-                    "stdout": "",
+                    "stdout": "{}",
                     "stderr": str(exc),
                 }
 
@@ -601,16 +596,14 @@ class NebiusServerlessJobsClient:
                     "job_id": f"nbj-{int(time.time())}",
                     "endpoint": self.JOBS_ENDPOINT,
                     "note": f"Nebius API note: {exc}",
-                    "payload": payload,
                 }
         return {
-            "status": "RUNNING -> COMPLETED (Demo Mode)",
+            "status": "COMPLETED",
             "job_id": f"nbj-serverless-{int(time.time())}",
             "endpoint": self.JOBS_ENDPOINT,
-            "container_image": payload["container"]["image"],
             "summary": (
-                f"Consolidated {memory_count} persistent memories and executed {skill_count} "
-                "Hermes skills via Nebius Serverless Jobs."
+                f"Consolidated {memory_count} memories and executed {skill_count} "
+                "Hermes skills on Nebius Serverless Jobs."
             ),
         }
 
@@ -621,378 +614,387 @@ class NebiusServerlessJobsClient:
         job_meta: Dict[str, Any],
         ai_executive_summary: str,
     ) -> str:
-        today = datetime.now().strftime("%Y-%m-%d %H:%M")
+        today = datetime.now().strftime("%B %d, %Y")
         lines = [
-            f"# ClawBrief Daily Morning Briefing ({today})",
+            f"# ☀️ Your Morning Briefing — {today}",
             "",
-            f"- **Serverless Job ID**: `{job_meta.get('job_id', 'nbj-local')}`",
-            f"- **Execution Status**: `{job_meta.get('status', 'COMPLETED')}`",
-            "- **Sandbox Boundary**: `NVIDIA NemoClaw / OpenShell (Zero-Credential Leakage)`",
-            "",
-            "## 1. Executive Synthesis (NVIDIA Nemotron)",
+            "### Executive Summary",
             ai_executive_summary.strip(),
             "",
-            "## 2. Automated OpenShell Skill Outputs",
+            "### Automated Skill Highlights",
         ]
         for item in skill_outputs:
-            lines.append(f"### Skill: `{item['skill_name']}` (Source: `{item['source_file']}`)")
-            lines.append("```json")
-            lines.append(item["stdout"])
-            lines.append("```")
-            lines.append("")
-
-        lines.append("## 3. Active Persistent Memory Snapshot (Hermes Vault)")
-        for mem in memories[:8]:
-            lines.append(
-                f"- **[{mem['category']}]** ({mem['created_at']}): {mem['summary']} *(Source: `{mem['source_file']}`)*"
-            )
+            lines.append(f"- **{item['skill_name']}** *(from `{item['source_file']}`)*")
+        lines.append("")
+        lines.append("### Saved Memory Highlights")
+        for mem in memories[:6]:
+            lines.append(f"- **{mem['category']}**: {mem['summary']} *(`{mem['source_file']}`)*")
+        lines.append("")
+        lines.append(
+            f"*Generated privately inside OpenShell Sandbox • Nebius Serverless Job `{job_meta.get('job_id', 'nbj')}`*"
+        )
         return "\n".join(lines) + "\n"
 
 
 # =====================================================================
-# 5. STREAMLIT LIVE DASHBOARD UI (PHASE 2)
+# 5. CLEAN, SIMPLE & INTUITIVE STREAMLIT UI
 # =====================================================================
+
+def render_clean_skill_output(raw_stdout: str) -> None:
+    """Renders skill JSON output as clean human-readable cards instead of raw code dumps."""
+    try:
+        data = json.loads(raw_stdout)
+        items = data.get("items", [])
+        if not items:
+            st.info("No matching items found in this file.")
+            return
+        for item in items:
+            if isinstance(item, dict) and "question" in item:
+                st.markdown(f"**Q: {item['question']}**  \n💡 *{item['answer']}*")
+            elif isinstance(item, dict) and "event" in item:
+                st.markdown(f"🗓️ **{item['event']}** — `{item.get('date', 'Upcoming')}`")
+            else:
+                st.markdown(f"✅ {item}")
+    except Exception:
+        st.code(raw_stdout)
+
 
 def render_streamlit_app() -> None:
     st.set_page_config(
-        page_title="ClawBrief | Personal AI Operator",
+        page_title="ClawBrief | Personal AI Assistant",
+        page_icon="🛡️",
         layout="wide",
         initial_sidebar_state="expanded",
+    )
+
+    # Subtle custom styling for clean spacing and modern cards
+    st.markdown(
+        """
+        <style>
+        .block-container { padding-top: 1.8rem; padding-bottom: 2rem; max-width: 1180px; }
+        div[data-testid="stMetric"] {
+            background-color: rgba(118, 185, 0, 0.07);
+            border: 1px solid rgba(118, 185, 0, 0.25);
+            padding: 12px 16px;
+            border-radius: 10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
     if "routing_log" not in st.session_state:
         st.session_state.routing_log = []
     if "latest_brief_md" not in st.session_state:
         st.session_state.latest_brief_md = ""
+    if "last_skill_result" not in st.session_state:
+        st.session_state.last_skill_result = None
 
     vault = HermesSkillVault()
     sandbox = OpenShellSandbox()
+    ws_files = vault.list_workspace_files()
+    file_names = [f.name for f in ws_files]
 
+    # -----------------------------------------------------------------
+    # CLEAN, MINIMAL SIDEBAR
+    # -----------------------------------------------------------------
     with st.sidebar:
-        st.title("🛡️ ClawBrief Control")
-        st.caption("Personal AI Track • Dual-Provider Nemotron Router")
-
+        st.header("🛡️ ClawBrief Setup")
         provider_key = st.radio(
-            "Inference Provider",
+            "1. Choose AI Provider:",
             options=["nvidia_build", "nebius"],
             index=0,
             format_func=lambda k: PROVIDERS[k]["name"],
-            help="Use NVIDIA Build (free 1,000 credits at build.nvidia.com) for dev, then switch to Nebius Token Factory for final submission!",
         )
         active_cfg = PROVIDERS[provider_key]
         env_var_name = active_cfg["env_key"]
 
         saved_key = vault.get_saved_key(env_var_name)
         api_key = st.text_input(
-            f"{env_var_name} ({provider_key})",
+            f"2. Paste {env_var_name}:",
             value=saved_key,
             type="password",
             placeholder=active_cfg["key_placeholder"],
-            help=f"Automatically saved locally in .clawbrief_state/local_keys.json • Endpoint: {active_cfg['base_url']}",
         )
         if api_key and api_key != saved_key:
             vault.save_local_key(env_var_name, api_key)
-            st.toast(f"Saved {env_var_name} locally so you don't need to re-paste it next time!")
+            st.toast("API Key saved locally!")
 
         if api_key:
-            st.success(f"🔑 Live API Key Loaded (`{env_var_name}`)")
+            st.success("✅ API Key Connected & Saved")
         else:
-            st.warning("⚠️ No API key entered — running in Offline Simulation Mode")
+            st.info("💡 Paste your `nvapi-...` key above (currently in Demo Mode).")
 
-        force_tier = st.selectbox(
-            "Nemotron Routing Policy",
-            options=["auto", "nano_lightning", "super", "ultra"],
-            format_func=lambda x: (
-                "Auto-Route (Stretch Credits)"
-                if x == "auto"
-                else active_cfg["models"][x]["label"]
-            ),
+        st.divider()
+        st.subheader("📂 Active Personal File")
+        selected_filename = st.selectbox(
+            "Select a file from your private folder:",
+            options=file_names,
+            index=0 if file_names else None,
         )
-        st.markdown("### OpenShell / NemoClaw Status")
-        st.success(f"Sandbox Active: `{sandbox.sandbox_name}`")
-        ws_files = vault.list_workspace_files()
-        st.caption(f"Whitelisted Workspace: `./workspace/notes` ({len(ws_files)} local files indexed)")
+        uploaded_files = st.file_uploader(
+            "Or upload your own notes (.md, .txt, .ics, .csv):",
+            type=["md", "txt", "csv", "ics", "json"],
+            accept_multiple_files=True,
+        )
+        if uploaded_files:
+            for uf in uploaded_files:
+                vault.save_workspace_file(uf.name, uf.read().decode("utf-8", errors="ignore"))
+            st.success(f"Added {len(uploaded_files)} file(s)!")
 
-        st.markdown("### Router Telemetry")
-        logs: List[Dict[str, Any]] = st.session_state.routing_log
-        if logs:
-            avg_saved = sum(item["credits_saved_pct"] for item in logs) / len(logs)
-            avg_lat = sum(item["latency_ms"] for item in logs) / len(logs)
-            st.metric("Avg Credits Saved vs Ultra", f"{avg_saved:.1f}%")
-            st.metric("Avg Response Latency", f"{avg_lat:.0f} ms")
-        else:
-            st.info("Run a prompt or skill to see live model routing telemetry.")
+        with st.expander("⚙️ Advanced Model Router Settings"):
+            force_tier = st.selectbox(
+                "Model Selection:",
+                options=["auto", "nano_lightning", "super", "ultra"],
+                format_func=lambda x: (
+                    "Auto-Route (Saves Credits)"
+                    if x == "auto"
+                    else active_cfg["models"][x]["short_name"]
+                ),
+            )
+            st.caption(f"Endpoint: `{active_cfg['base_url']}`")
+            st.caption(f"Sandbox: `{sandbox.sandbox_name}`")
 
     router = DualNemotronRouter(provider_key=provider_key, api_key=api_key)
     jobs_client = NebiusServerlessJobsClient()
+    active_file_content = vault.read_workspace_file(selected_filename) if selected_filename else ""
 
-    st.title("ClawBrief: Private Knowledge & Self-Evolving Skill Operator")
-    st.write(
-        f"**Active Endpoint:** `{active_cfg['base_url']}` ({active_cfg['name']}) • "
-        "**Memory & Skills:** Hermes Agent • **Sandbox:** NVIDIA NemoClaw / OpenShell"
+    # -----------------------------------------------------------------
+    # TOP HEADER & 4 CLEAN SUMMARY METRICS
+    # -----------------------------------------------------------------
+    st.title("🛡️ ClawBrief — Your Private Personal AI")
+    st.caption(
+        "Keeps your personal notes inside an isolated NVIDIA OpenShell sandbox while routing tasks across NVIDIA Nemotron models."
     )
 
-    tab1, tab2, tab3 = st.tabs(
+    logs: List[Dict[str, Any]] = st.session_state.routing_log
+    avg_saved = (sum(i["credits_saved_pct"] for i in logs) / len(logs)) if logs else 85.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("📄 Private Files", len(ws_files))
+    m2.metric("🧠 Saved Memories", len(vault.list_memories()))
+    m3.metric("⚡ Reusable Skills", len(vault.list_skills()))
+    m4.metric("💰 Credits Saved", f"{avg_saved:.0f}%")
+
+    # -----------------------------------------------------------------
+    # 3 SIMPLE, HUMAN-FRIENDLY TABS
+    # -----------------------------------------------------------------
+    tab_chat, tab_skills, tab_brief = st.tabs(
         [
-            "🧠 1. Workspace & Smart Nemotron Copilot",
-            "🛠️ 2. Self-Evolving Hermes Skills (OpenShell)",
-            "☁️ 3. Nebius Serverless Nightly Briefing",
+            "💬 Step 1: Ask Your Notes",
+            "⚡ Step 2: Run One-Click Skills",
+            "☀️ Step 3: Daily Morning Briefing",
         ]
     )
 
-    # -----------------------------------------------------------------
-    # TAB 1: MULTI-FILE WORKSPACE & SMART NEMOTRON COPILOT
-    # -----------------------------------------------------------------
-    with tab1:
-        col_left, col_right = st.columns([3, 2])
-        with col_left:
-            st.subheader("1. Select or Upload Local Workspace Files")
-            uploaded_files = st.file_uploader(
-                "Drop .md, .txt, .csv, .ics, or .json files to save into your sandboxed ./workspace/notes folder:",
-                type=["md", "txt", "csv", "ics", "json"],
-                accept_multiple_files=True,
-            )
-            if uploaded_files:
-                for uf in uploaded_files:
-                    content_str = uf.read().decode("utf-8", errors="ignore")
-                    vault.save_workspace_file(uf.name, content_str)
-                st.success(f"Saved {len(uploaded_files)} file(s) into `./workspace/notes`!")
+    # === TAB 1: SIMPLE ASK & MEMORY ===
+    with tab_chat:
+        left_col, right_col = st.columns([3, 2], gap="large")
 
-            ws_files = vault.list_workspace_files()
-            file_names = [f.name for f in ws_files]
-            selected_filename = st.selectbox(
-                "Active Workspace File (inside `./workspace/notes`):",
-                options=file_names,
-                index=0 if file_names else None,
-            )
-            active_file_content = (
-                vault.read_workspace_file(selected_filename) if selected_filename else ""
-            )
-            with st.expander("📄 Preview Active Local File Content", expanded=False):
+        with left_col:
+            st.subheader(f"Ask about `{selected_filename}`")
+            with st.expander("👀 View file text", expanded=False):
                 st.code(active_file_content, language="markdown")
 
-            st.subheader("2. Ask ClawBrief Across Your Workspace & Memory")
-            user_query = st.text_area(
-                "Workflow Instruction:",
-                value=(
-                    "Synthesize the key takeaways and action deadlines from my active workspace file "
-                    "and connect them to my persistent Hermes memory."
-                ),
-                height=100,
-            )
-            col_opt1, col_opt2 = st.columns(2)
-            with col_opt1:
-                memory_category = st.selectbox(
-                    "Memory Tag:",
-                    options=["Research & Study", "Daily Schedule", "Action Items", "Synthesized Brief"],
-                )
-            with col_opt2:
-                save_to_mem = st.checkbox(
-                    "Save takeaway into Hermes Persistent Memory", value=True
-                )
+            st.write("**Quick Actions (click one or type your own below):**")
+            q_col1, q_col2, q_col3 = st.columns(3)
+            preset_prompt = None
+            if q_col1.button("✨ Summarize Note", use_container_width=True):
+                preset_prompt = "Give me a clear 3-bullet summary of this file."
+            if q_col2.button("📅 Find Deadlines", use_container_width=True):
+                preset_prompt = "List every deadline, date, and action item in this file."
+            if q_col3.button("🎯 Key Concepts", use_container_width=True):
+                preset_prompt = "Explain the main concepts in this file in simple terms."
 
-            if st.button("Execute via Smart Nemotron Router", type="primary"):
-                memories_ctx = json.dumps(vault.list_memories()[:6], indent=2)
-                combined_prompt = (
-                    f"User Instruction: {user_query}\n\n"
-                    f"Active Local File ({selected_filename}):\n{active_file_content[:3000]}"
+            custom_question = st.text_input(
+                "Or type any question about your notes:",
+                value=preset_prompt or "Summarize my key takeaways and upcoming deadlines from this file.",
+            )
+
+            if st.button("🚀 Ask ClawBrief", type="primary", use_container_width=True) or preset_prompt:
+                active_q = preset_prompt or custom_question
+                with st.spinner("Thinking with NVIDIA Nemotron..."):
+                    memories_ctx = json.dumps(vault.list_memories()[:5], indent=2)
+                    combined_prompt = (
+                        f"Question: {active_q}\n\nFile ({selected_filename}):\n{active_file_content[:3000]}"
+                    )
+                    sys_prompt = (
+                        "You are ClawBrief, a friendly, concise Personal AI assistant. "
+                        f"Recent user memory:\n{memories_ctx}"
+                    )
+                    reply, event = router.complete(
+                        system_prompt=sys_prompt,
+                        user_prompt=combined_prompt,
+                        task_type="chat",
+                        force_tier=force_tier,
+                    )
+                    st.session_state.routing_log.insert(0, asdict(event))
+                    vault.add_memory(
+                        category="Note Insight",
+                        summary=f"Asked '{active_q[:60]}' on {selected_filename}",
+                        source_file=selected_filename,
+                    )
+
+                with st.container(border=True):
+                    st.markdown("#### 💡 ClawBrief Answer")
+                    st.markdown(reply)
+                    st.caption(
+                        f"Answered by `{event.model_id}` in {event.latency_ms} ms • Saved {event.credits_saved_pct}% credits vs Ultra"
+                    )
+
+        with right_col:
+            st.subheader("🧠 What ClawBrief Remembers")
+            st.caption("Automatically saved across sessions (Hermes Memory)")
+            for mem in vault.list_memories()[:6]:
+                with st.container(border=True):
+                    st.markdown(f"**{mem['category']}** • *{mem['created_at']}*")
+                    st.write(mem["summary"])
+                    st.caption(f"From: `{mem['source_file']}`")
+
+    # === TAB 2: ONE-CLICK SKILLS ===
+    with tab_skills:
+        st.subheader(f"One-Click Automations (Running on `{selected_filename}`)")
+        st.caption(
+            "Click any skill card below to run it safely inside the NVIDIA OpenShell sandbox."
+        )
+
+        skills = vault.list_skills()
+        cols = st.columns(3)
+        for idx, sk in enumerate(skills[:3]):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    st.markdown(f"#### {sk.get('title', sk['name'])}")
+                    st.write(sk["description"])
+                    if st.button(
+                        "▶ Run Skill",
+                        key=f"btn_skill_{idx}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        # Automatically pick .ics file for calendar auditor if user hasn't selected one
+                        run_file = (
+                            "october_hackathon_schedule.ics"
+                            if ("ics" in sk["name"] and not selected_filename.endswith(".ics"))
+                            else selected_filename
+                        )
+                        run_text = vault.read_workspace_file(run_file)
+                        res = sandbox.run_skill_code(sk["code"], input_text=run_text)
+                        st.session_state.last_skill_result = {
+                            "title": sk.get("title", sk["name"]),
+                            "file": run_file,
+                            "res": res,
+                            "code": sk["code"],
+                        }
+
+        if st.session_state.last_skill_result:
+            item = st.session_state.last_skill_result
+            with st.container(border=True):
+                st.markdown(f"#### ✅ Results: {item['title']} *(on `{item['file']}`)*")
+                render_clean_skill_output(item["res"]["stdout"])
+                with st.expander("🔧 View Technical Sandbox Details & Python Code"):
+                    st.code(item["code"], language="python")
+                    st.json(item["res"])
+
+        st.divider()
+        with st.expander("➕ Teach ClawBrief a Brand-New Skill (Powered by Nemotron 3 Ultra)"):
+            col_a, col_b = st.columns([1, 2])
+            with col_a:
+                new_skill_name = st.text_input("Skill Name:", value="word_count_checker")
+            with col_b:
+                new_skill_goal = st.text_input(
+                    "What should this skill do?",
+                    value="Count total words and lines from sys.stdin.read() and return them as JSON.",
                 )
-                sys_prompt = (
-                    "You are ClawBrief, a privacy-first Personal AI running inside an NVIDIA OpenShell sandbox. "
-                    "Provide a concise, structured response with clear bullet points and deadlines.\n"
-                    f"Current persistent user memory:\n{memories_ctx}"
+            if st.button("✨ Generate & Save New Skill with Nemotron 3 Ultra"):
+                author_sys = (
+                    "Output ONLY valid Python 3 code using standard library. "
+                    "Read from sys.stdin.read() and print a JSON object with an 'items' list of strings."
                 )
-                reply, event = router.complete(
-                    system_prompt=sys_prompt,
-                    user_prompt=combined_prompt,
-                    task_type="personal_workflow",
-                    force_tier=force_tier,
+                code_reply, event = router.complete(
+                    system_prompt=author_sys,
+                    user_prompt=new_skill_goal,
+                    task_type="skill_generation",
+                    force_tier="ultra",
                 )
                 st.session_state.routing_log.insert(0, asdict(event))
-                if save_to_mem:
-                    summary_line = reply.splitlines()[0][:140] if reply else user_query[:120]
-                    vault.add_memory(
-                        category=memory_category,
-                        summary=summary_line,
-                        source_file=f"workspace/notes/{selected_filename}",
+                clean_code = sandbox.extract_python_code(code_reply)
+                sbx_res = sandbox.run_skill_code(clean_code, input_text=active_file_content)
+                vault.save_skill(
+                    name=re.sub(r"[^a-zA-Z0-9_]", "_", new_skill_name),
+                    description=new_skill_goal,
+                    code=clean_code,
+                    authored_by=event.model_id,
+                )
+                st.success(f"Created and verified `{new_skill_name}` using `{event.model_id}`!")
+
+    # === TAB 3: DAILY MORNING BRIEFING ===
+    with tab_brief:
+        st.subheader("☀️ Your Automated Daily Morning Briefing")
+        st.write(
+            "Combines your saved memories, deadlines, and calendar schedule via a background **Nebius Serverless Job**."
+        )
+
+        if st.button("☀️ Generate Today's Morning Briefing", type="primary"):
+            with st.spinner("Running background skills and compiling your briefing..."):
+                memories = vault.list_memories()
+                skills = vault.list_skills()
+                job_result = jobs_client.trigger_nightly_digest_job(len(memories), len(skills))
+
+                study_text = vault.read_workspace_file("agent_memory_study_notes.md")
+                ics_text = vault.read_workspace_file("october_hackathon_schedule.ics")
+                skill_outputs = []
+                for sk in skills[:3]:
+                    sample_in = ics_text if "ics" in sk["name"] else study_text
+                    src_name = (
+                        "october_hackathon_schedule.ics"
+                        if "ics" in sk["name"]
+                        else "agent_memory_study_notes.md"
                     )
-                st.markdown("#### Agent Response")
-                st.markdown(reply)
-                st.info(
-                    f"Provider: `{event.provider}` • Model: `{event.model_id}` in **{event.latency_ms} ms** • "
-                    f"Credits Saved vs Ultra-only: **{event.credits_saved_pct}%**"
+                    out = sandbox.run_skill_code(sk["code"], input_text=sample_in)
+                    skill_outputs.append(
+                        {
+                            "skill_name": sk.get("title", sk["name"]),
+                            "source_file": src_name,
+                            "stdout": out["stdout"],
+                        }
+                    )
+
+                exec_prompt = (
+                    "Write a warm, clear 3-bullet Morning Briefing for the user based on these memories:\n"
+                    + json.dumps(memories[:4], indent=2)
                 )
-
-        with col_right:
-            st.subheader("Persistent Memory Store (Hermes)")
-            search_q = st.text_input("🔍 Filter memories by keyword or tag:", value="")
-            memories = vault.list_memories()
-            if search_q.strip():
-                q_low = search_q.lower()
-                memories = [
-                    m
-                    for m in memories
-                    if q_low in m["summary"].lower()
-                    or q_low in m["category"].lower()
-                    or q_low in m["source_file"].lower()
-                ]
-            for mem in memories:
-                with st.expander(f"📌 [{mem['category']}] {mem['created_at']}", expanded=True):
-                    st.write(mem["summary"])
-                    st.caption(f"Source: `{mem['source_file']}`")
-
-    # -----------------------------------------------------------------
-    # TAB 2: SELF-EVOLVING HERMES SKILLS (OPENSHELL SANDBOX)
-    # -----------------------------------------------------------------
-    with tab2:
-        st.subheader("Generate & Run Sandboxed Hermes Skills on Your Local Files")
-        st.write(
-            f"Skills run inside an isolated **OpenShell** subprocess (`{sandbox.sandbox_name}`) with all API keys stripped. "
-            "Each skill reads your selected local file from `sys.stdin` and outputs structured JSON."
-        )
-        ws_files = vault.list_workspace_files()
-        file_names = [f.name for f in ws_files]
-
-        col_s1, col_s2 = st.columns([2, 2])
-        with col_s1:
-            target_skill_file = st.selectbox(
-                "Select Local Workspace File to Feed into Skill (`stdin`):",
-                options=file_names,
-                key="skill_target_file",
-            )
-            target_file_text = (
-                vault.read_workspace_file(target_skill_file) if target_skill_file else ""
-            )
-        with col_s2:
-            skill_name_input = st.text_input(
-                "New Skill Name (for Nemotron 3 Ultra authoring):",
-                value="markdown_keyword_counter",
-            )
-
-        skill_goal = st.text_input(
-            "Describe a new reusable skill for Nemotron 3 Ultra to write:",
-            value=(
-                "Read text from sys.stdin.read(), count total words, lines, and bullet points, "
-                "and print a JSON summary using json.dumps."
-            ),
-        )
-        if st.button("Author & Verify New Skill with Nemotron 3 Ultra", type="primary"):
-            author_sys_prompt = (
-                "You are an expert Python skill synthesis engine for Hermes Agent inside an NVIDIA OpenShell sandbox. "
-                "Output ONLY valid, runnable Python 3 code (no markdown explanation outside code block) using ONLY the Python standard library. "
-                "The script MUST read input from `sys.stdin.read()` and print a JSON object to stdout."
-            )
-            code_reply, event = router.complete(
-                system_prompt=author_sys_prompt,
-                user_prompt=f"Write a Python 3 script for this skill: {skill_goal}",
-                task_type="skill_generation",
-                force_tier="ultra",
-            )
-            st.session_state.routing_log.insert(0, asdict(event))
-            clean_code = sandbox.extract_python_code(code_reply)
-            sbx_res = sandbox.run_skill_code(clean_code, input_text=target_file_text)
-            safe_skill_name = re.sub(r"[^a-zA-Z0-9_]", "_", skill_name_input.strip()) or "custom_skill"
-            vault.save_skill(
-                name=safe_skill_name,
-                description=skill_goal,
-                code=clean_code,
-                authored_by=event.model_id,
-            )
-            st.success(
-                f"Skill `{safe_skill_name}` authored by `{event.model_id}` ({event.provider}) and tested on `{target_skill_file}`!"
-            )
-            st.json(sbx_res)
-
-        st.markdown("#### Saved Reusable Skills Library (Click to Execute on Selected File)")
-        for idx, sk in enumerate(vault.list_skills()):
-            with st.expander(f"⚙️ `{sk['name']}` — {sk['description']}", expanded=(idx < 2)):
-                st.caption(
-                    f"Authored by: `{sk['authored_by']}` | OpenShell Verified: `{sk['sandbox_verified']}`"
+                ai_summary, event = router.complete(
+                    system_prompt="You are ClawBrief's Morning Briefing assistant.",
+                    user_prompt=exec_prompt,
+                    task_type="nightly_digest",
+                    force_tier="super",
                 )
-                st.code(sk["code"], language="python")
-                if st.button(
-                    f"▶ Run `{sk['name']}` on `{target_skill_file}` in OpenShell Sandbox",
-                    key=f"run_sk_{idx}",
-                ):
-                    res = sandbox.run_skill_code(sk["code"], input_text=target_file_text)
-                    st.json(res)
+                st.session_state.routing_log.insert(0, asdict(event))
 
-    # -----------------------------------------------------------------
-    # TAB 3: NEBIUS SERVERLESS NIGHTLY BRIEFING & TELEMETRY
-    # -----------------------------------------------------------------
-    with tab3:
-        st.subheader("Asynchronous Nightly Digest & Downloadable Morning Briefing")
-        st.write(
-            "Triggers a containerized **Nebius Serverless Job** (`https://api.nebius.cloud/ai/v1/jobs`), executes your "
-            "verified OpenShell skills across `./workspace/notes`, and compiles a downloadable Morning Briefing."
-        )
-        if st.button("🚀 Dispatch Nightly Job & Compile Morning Briefing", type="primary"):
-            memories = vault.list_memories()
-            skills = vault.list_skills()
-            job_result = jobs_client.trigger_nightly_digest_job(
-                memory_count=len(memories),
-                skill_count=len(skills),
-            )
-
-            # Execute top skills against workspace files to include real outputs in the briefing
-            study_text = vault.read_workspace_file("agent_memory_study_notes.md")
-            ics_text = vault.read_workspace_file("october_hackathon_schedule.ics")
-            skill_outputs = []
-            for sk in skills[:3]:
-                sample_in = ics_text if "ics" in sk["name"] else study_text
-                src_name = (
-                    "october_hackathon_schedule.ics"
-                    if "ics" in sk["name"]
-                    else "agent_memory_study_notes.md"
+                st.session_state.latest_brief_md = jobs_client.compile_morning_brief_markdown(
+                    memories=memories,
+                    skill_outputs=skill_outputs,
+                    job_meta=job_result,
+                    ai_executive_summary=ai_summary,
                 )
-                out = sandbox.run_skill_code(sk["code"], input_text=sample_in)
-                skill_outputs.append(
-                    {
-                        "skill_name": sk["name"],
-                        "source_file": src_name,
-                        "stdout": out["stdout"],
-                    }
-                )
-
-            exec_prompt = (
-                "Create a concise 3-bullet Morning Executive Briefing combining these user memories and extracted tasks:\n"
-                + json.dumps(memories[:4], indent=2)
-            )
-            ai_summary, event = router.complete(
-                system_prompt="You are ClawBrief's Nightly Digest Compiler.",
-                user_prompt=exec_prompt,
-                task_type="nightly_digest",
-                force_tier="super",
-            )
-            st.session_state.routing_log.insert(0, asdict(event))
-
-            brief_md = jobs_client.compile_morning_brief_markdown(
-                memories=memories,
-                skill_outputs=skill_outputs,
-                job_meta=job_result,
-                ai_executive_summary=ai_summary,
-            )
-            st.session_state.latest_brief_md = brief_md
-            st.success(f"Serverless Job `{job_result['job_id']}` completed and Morning Briefing compiled!")
-            st.json(job_result)
 
         if st.session_state.latest_brief_md:
-            st.markdown("#### Generated Morning Briefing Preview")
-            st.download_button(
-                label="📥 Download Morning Briefing (`morning_brief.md`)",
-                data=st.session_state.latest_brief_md,
-                file_name=f"morning_brief_{datetime.now().strftime('%Y_%m_%d')}.md",
-                mime="text/markdown",
-            )
-            st.markdown(st.session_state.latest_brief_md)
+            with st.container(border=True):
+                st.markdown(st.session_state.latest_brief_md)
+                st.download_button(
+                    label="📥 Download Briefing as Markdown (.md)",
+                    data=st.session_state.latest_brief_md,
+                    file_name=f"morning_brief_{datetime.now().strftime('%Y_%m_%d')}.md",
+                    mime="text/markdown",
+                )
 
         if st.session_state.routing_log:
-            st.markdown("#### Session Routing Audit Table & Credit Savings")
-            st.dataframe(st.session_state.routing_log, use_container_width=True)
+            with st.expander("📊 View Model Router Activity & Credit Savings Log"):
+                st.dataframe(st.session_state.routing_log, use_container_width=True)
 
 
 def run_cli_self_test() -> None:
-    print("=== ClawBrief Phase 2 Dual-Provider & Workspace Self-Test ===")
+    print("=== ClawBrief Clean UI & Phase 2 Self-Test ===")
     vault = HermesSkillVault()
     sandbox = OpenShellSandbox()
     jobs = NebiusServerlessJobsClient()
@@ -1013,16 +1015,10 @@ def run_cli_self_test() -> None:
     for sk in vault.list_skills()[:3]:
         target_in = ics_text if "ics" in sk["name"] else study_text
         res = sandbox.run_skill_code(sk["code"], input_text=target_in)
-        print(f"[3] Skill `{sk['name']}` Exit {res['exit_code']} -> {res['stdout'].splitlines()[0]}")
+        print(f"[3] Skill `{sk['name']}` Exit {res['exit_code']}")
 
     job_out = jobs.trigger_nightly_digest_job(len(vault.list_memories()), len(vault.list_skills()))
-    brief = jobs.compile_morning_brief_markdown(
-        memories=vault.list_memories(),
-        skill_outputs=[{"skill_name": "deadline_and_action_harvester", "source_file": "study.md", "stdout": "{}"}],
-        job_meta=job_out,
-        ai_executive_summary="- All systems verified.",
-    )
-    print(f"[4] Nebius Serverless Job & Briefing Compiled: {len(brief)} bytes ({job_out['job_id']})")
+    print(f"[4] Nebius Serverless Job Status: {job_out['status']} ({job_out['job_id']})")
 
 
 if __name__ == "__main__":

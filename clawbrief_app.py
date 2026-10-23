@@ -3,21 +3,17 @@ ClawBrief: Private Personal AI Knowledge & Skill Operator
 Track: Personal AI Track (NVIDIA + Nebius Hackathon)
 License: MIT
 
-Dual-Provider Architecture:
-- Dev Mode (Default Now): NVIDIA Build Free NIM API (https://integrate.api.nvidia.com/v1)
-  * Fast Triage: nvidia/nemotron-3.5-lightning-30b-a3b
-  * Daily Synthesis: nvidia/nemotron-3.5-super-vl-120b-a12b
-  * Deep Skill Authoring: nvidia/nemotron-3-ultra-550b-a55b
-- Final Submission Mode: Nebius Token Factory (https://api.tokenfactory.nebius.com/v1)
-  * Fast Triage: nvidia/Nemotron-3_5-Lightning ($0.06/1M input)
-  * Daily Synthesis: nvidia/nemotron-3-super-120b-a12b ($0.30/1M input)
-  * Deep Skill Authoring: nvidia/Nemotron-3-Ultra-550b-a55b ($1.00/1M input)
+Easy Launch:
+- Double-click `run_clawbrief.bat` on Windows, OR
+- Press the Run (▶) button in VS Code / run `python clawbrief_app.py`, OR
+- Run `python -m streamlit run clawbrief_app.py`
 """
 
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, asdict
@@ -29,9 +25,11 @@ import urllib.error
 
 try:
     import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
     HAS_STREAMLIT = True
 except ImportError:
     HAS_STREAMLIT = False
+    get_script_run_ctx = lambda: None
 
 try:
     from openai import OpenAI
@@ -263,17 +261,18 @@ class DualNemotronRouter:
 
 
 # =====================================================================
-# 2. HERMES AGENT PERSISTENT MEMORY & REUSABLE SKILL VAULT
+# 2. HERMES AGENT PERSISTENT MEMORY, SKILLS & LOCAL KEY STORE
 # =====================================================================
 
 class HermesSkillVault:
-    """Manages persistent personal memory and self-evolving reusable skills."""
+    """Manages persistent personal memory, self-evolving skills, and local API key cache."""
 
     def __init__(self, storage_dir: str = ".clawbrief_state"):
         self.root = Path(storage_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.memory_file = self.root / "persistent_memory.json"
         self.skills_file = self.root / "reusable_skills.json"
+        self.keys_file = self.root / "local_keys.json"
         self._ensure_defaults()
 
     def _ensure_defaults(self) -> None:
@@ -313,6 +312,30 @@ class HermesSkillVault:
                 }
             ]
             self.skills_file.write_text(json.dumps(default_skills, indent=2))
+
+        if not self.keys_file.exists():
+            self.keys_file.write_text(json.dumps({}, indent=2))
+
+    def get_saved_key(self, env_var: str) -> str:
+        env_val = os.environ.get(env_var, "")
+        if env_val:
+            return env_val
+        try:
+            data = json.loads(self.keys_file.read_text())
+            return data.get(env_var, "")
+        except Exception:
+            return ""
+
+    def save_local_key(self, env_var: str, key_val: str) -> None:
+        if not key_val:
+            return
+        try:
+            data = json.loads(self.keys_file.read_text())
+        except Exception:
+            data = {}
+        if data.get(env_var) != key_val:
+            data[env_var] = key_val
+            self.keys_file.write_text(json.dumps(data, indent=2))
 
     def list_memories(self) -> List[Dict[str, Any]]:
         return json.loads(self.memory_file.read_text())
@@ -371,7 +394,7 @@ class OpenShellSandbox:
 
             try:
                 proc = subprocess.run(
-                    ["python3", "-I", str(script_path)],
+                    ["python3" if shutil.which("python3") else sys.executable, "-I", str(script_path)],
                     cwd=tmpdir,
                     env=safe_env,
                     capture_output=True,
@@ -461,7 +484,11 @@ class NebiusServerlessJobsClient:
 # =====================================================================
 
 def render_streamlit_app() -> None:
-    st.set_page_config(page_title="ClawBrief | Personal AI Operator", layout="wide")
+    st.set_page_config(
+        page_title="ClawBrief | Personal AI Operator",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
     if "routing_log" not in st.session_state:
         st.session_state.routing_log = []
@@ -481,14 +508,20 @@ def render_streamlit_app() -> None:
             help="Use NVIDIA Build (free 1,000 credits at build.nvidia.com) for dev, then switch to Nebius Token Factory for final submission!",
         )
         active_cfg = PROVIDERS[provider_key]
+        env_var_name = active_cfg["env_key"]
 
+        saved_key = vault.get_saved_key(env_var_name)
         api_key = st.text_input(
-            f"{active_cfg['env_key']} ({provider_key})",
-            value=os.environ.get(active_cfg["env_key"], ""),
+            f"{env_var_name} ({provider_key})",
+            value=saved_key,
             type="password",
             placeholder=active_cfg["key_placeholder"],
-            help=f"Endpoint: {active_cfg['base_url']}",
+            help=f"Automatically saved locally in .clawbrief_state/local_keys.json • Endpoint: {active_cfg['base_url']}",
         )
+        if api_key and api_key != saved_key:
+            vault.save_local_key(env_var_name, api_key)
+            st.toast(f"Saved {env_var_name} locally so you don't need to re-paste it next time!")
+
         force_tier = st.selectbox(
             "Nemotron Routing Policy",
             options=["auto", "nano_lightning", "super", "ultra"],
@@ -646,7 +679,6 @@ def run_cli_self_test() -> None:
     sandbox = OpenShellSandbox()
     jobs = NebiusServerlessJobsClient()
 
-    # 1. Test NVIDIA Build Free API mode (default for dev)
     nv_router = DualNemotronRouter(provider_key="nvidia_build")
     _, ev_nv = nv_router.complete(
         system_prompt="You are ClawBrief.",
@@ -655,7 +687,6 @@ def run_cli_self_test() -> None:
     )
     print(f"[1] NVIDIA Build Dev Mode -> {ev_nv.model_id} (Saved {ev_nv.credits_saved_pct}% credits)")
 
-    # 2. Test Nebius Token Factory mode (for final submission)
     nb_router = DualNemotronRouter(provider_key="nebius")
     _, ev_nb = nb_router.complete(
         system_prompt="Write a Python script.",
@@ -673,7 +704,14 @@ def run_cli_self_test() -> None:
 
 
 if __name__ == "__main__":
-    if HAS_STREAMLIT and os.environ.get("CLAWBRIEF_CLI_TEST") != "1":
-        render_streamlit_app()
+    if os.environ.get("CLAWBRIEF_CLI_TEST") == "1":
+        run_cli_self_test()
+    elif HAS_STREAMLIT:
+        # If running inside `streamlit run`, render the UI; if executed directly via `python clawbrief_app.py`, auto-launch Streamlit!
+        if get_script_run_ctx() is not None:
+            render_streamlit_app()
+        else:
+            print("Auto-launching Streamlit server for clawbrief_app.py...")
+            sys.exit(subprocess.call([sys.executable, "-m", "streamlit", "run", os.path.abspath(__file__)]))
     else:
         run_cli_self_test()

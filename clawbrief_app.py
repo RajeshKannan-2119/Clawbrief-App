@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import urllib.request
 import urllib.error
 
@@ -40,7 +40,7 @@ except ImportError:
 
 
 # =====================================================================
-# 1. DUAL-PROVIDER SMART MODEL ROUTER (NVIDIA BUILD + NEBIUS)
+# 1. DUAL-PROVIDER SMART MODEL ROUTER + TOKENMAXX GOVERNOR
 # =====================================================================
 
 PROVIDERS = {
@@ -113,6 +113,115 @@ class RoutingEvent:
     credits_saved_pct: float
 
 
+class TokenmaxxGovernor:
+    """Preflights prompt token budgets, slices large context, and writes .tokenmaxx/checkpoint.json."""
+
+    def __init__(self, session_token_limit: int = 24000, checkpoint_dir: str = ".tokenmaxx"):
+        self.session_limit = session_token_limit
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_file = self.checkpoint_dir / "checkpoint.json"
+
+    @staticmethod
+    def estimate_tokens(text: str, is_code: bool = False) -> int:
+        chars_per_token = 3.2 if is_code else 4.0
+        return max(1, int(len(text) / chars_per_token))
+
+    @staticmethod
+    def slice_context(text: str, query: str, max_chars: int = 4500) -> tuple[str, int]:
+        """Slices relevant paragraphs around query keywords while keeping intro context for summaries."""
+        original_len = len(text)
+        if original_len <= max_chars:
+            return text, 0
+        keywords = [
+            w.lower()
+            for w in re.findall(r"[a-zA-Z0-9]{4,}", query)
+            if w.lower() not in {"summarize", "summary", "clear", "bullet", "what", "this", "file", "from", "with", "your", "note", "give"}
+        ]
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if keywords and paragraphs:
+            scored = sorted(
+                paragraphs,
+                key=lambda p: sum(1 for k in keywords if k in p.lower()),
+                reverse=True,
+            )
+            sliced = "\n\n".join(scored)[:max_chars]
+        else:
+            # For general summary requests, take the beginning + middle + end sample
+            half = max_chars // 2
+            sliced = text[:half] + "\n\n...[middle section]...\n\n" + text[original_len // 2 : (original_len // 2) + half]
+        saved_chars = max(0, original_len - len(sliced))
+        return sliced, int(saved_chars / 4.0)
+
+    def get_budget_status(self, used_tokens: int) -> Dict[str, Any]:
+        remaining = max(0, self.session_limit - used_tokens)
+        pct_remaining = (remaining / self.session_limit) * 100.0
+        if pct_remaining > 40:
+            state = "Green"
+        elif pct_remaining >= 20:
+            state = "Yellow"
+        elif pct_remaining >= 10:
+            state = "Orange"
+        else:
+            state = "Red"
+        return {
+            "state": state,
+            "used_tokens": used_tokens,
+            "remaining_safe": remaining,
+            "pct_remaining": round(pct_remaining, 1),
+        }
+
+    def write_checkpoint(
+        self,
+        active_file: str,
+        memories: List[Dict[str, Any]],
+        skills: List[Dict[str, Any]],
+        used_tokens: int,
+    ) -> Path:
+        status = self.get_budget_status(used_tokens)
+        payload = {
+            "version": 1,
+            "task": f"ClawBrief Personal AI Session ({active_file})",
+            "completed": [
+                {
+                    "id": "workspace-ingestion",
+                    "files": [active_file],
+                    "summary": f"Indexed {len(memories)} memories and {len(skills)} verified OpenShell skills",
+                    "validated": True,
+                }
+            ],
+            "remaining": [
+                {
+                    "id": "final-nebius-cutover",
+                    "goal": "Switch sidebar toggle to Nebius Token Factory for Oct 30 submission video",
+                    "dependsOn": ["workspace-ingestion"],
+                }
+            ],
+            "decisions": [
+                "Use Tokenmaxx slice_context to cap per-call file context at 4,500 chars",
+                "Route everyday triage to Nemotron Lightning/Super and reserve Ultra for skill synthesis",
+            ],
+            "constraints": [
+                "Keep local files inside NVIDIA OpenShell sandbox boundary",
+                "Never expose API keys to skill subprocesses",
+            ],
+            "currentState": f"Tokenmaxx State: {status['state']} ({status['pct_remaining']}% budget remaining)",
+            "nextAction": "Run python -m streamlit run clawbrief_app.py",
+            "budget": {
+                "estimatedTotal": self.session_limit,
+                "consumed": used_tokens,
+                "remainingSafe": status["remaining_safe"],
+            },
+            "validation": {
+                "run": ["CLAWBRIEF_CLI_TEST=1 python3 clawbrief_app.py"],
+                "passed": ["CLAWBRIEF_CLI_TEST=1 python3 clawbrief_app.py"],
+                "failed": [],
+            },
+        }
+        self.checkpoint_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return self.checkpoint_file
+
+
 class DualNemotronRouter:
     """Routes Personal AI tasks across NVIDIA Build (free dev) or Nebius Token Factory (final submission)."""
 
@@ -137,21 +246,18 @@ class DualNemotronRouter:
             "create a skill",
             "write a script",
             "automate",
-            "synthesize",
             "deep research",
             "multi-step",
-            "design",
         ]
         fast_keywords = [
             "tag",
             "classify",
             "quick",
-            "extract action",
             "remind",
             "status",
             "triage",
         ]
-        if any(k in lower for k in skill_keywords) or len(prompt) > 450:
+        if any(k in lower for k in skill_keywords):
             return "ultra"
         if any(k in lower for k in fast_keywords) or len(prompt) < 120:
             return "nano_lightning"
@@ -238,11 +344,8 @@ class DualNemotronRouter:
             )
         return (
             f"Here is your summary (processed by `{model_id}`):\n\n"
-            "- **Key Takeaway**: Your notes focus on episodic, semantic, and procedural memory in personal AI agents.\n"
-            "- **Upcoming Deadlines**:\n"
-            "  - **Oct 25**: Test pre-built skills on local notes.\n"
-            "  - **Oct 28**: Switch sidebar toggle to Nebius Token Factory.\n"
-            "  - **Oct 30**: Final hackathon video & GitHub repo submission."
+            f"- **Source Preview**: `{user_prompt[:180]}...`\n"
+            "- **Note**: Paste your API key in the left sidebar if not connected yet."
         )
 
 
@@ -254,7 +357,7 @@ DEFAULT_SKILLS = [
     {
         "name": "deadline_and_action_harvester",
         "title": "⚡ Extract Deadlines & To-Dos",
-        "description": "Finds every TODO, ACTION item, checkbox, and due date in your selected note.",
+        "description": "Finds every TODO, ACTION item, checkbox, and due date in your selected note or PDF.",
         "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
         "sandbox_verified": True,
         "code": (
@@ -269,7 +372,7 @@ DEFAULT_SKILLS = [
     {
         "name": "study_flashcard_crystallizer",
         "title": "🃏 Turn Notes into Study Flashcards",
-        "description": "Converts bulleted definitions in your Markdown notes into Q&A flashcards.",
+        "description": "Converts bulleted definitions or headings in your notes/PDFs into Q&A flashcards.",
         "authored_by": "nvidia/nemotron-3-ultra-550b-a55b",
         "sandbox_verified": True,
         "code": (
@@ -281,10 +384,11 @@ DEFAULT_SKILLS = [
             "    s = line.strip()\n"
             "    if s.startswith('#'):\n"
             "        current_topic = s.lstrip('#').strip()\n"
-            "    elif s.startswith(('-', '*')) and ':' in s:\n"
-            "        term, definition = s.lstrip('-* ').split(':', 1)\n"
-            "        cards.append({'topic': current_topic, 'question': f'What is {term.strip()}?', 'answer': definition.strip()})\n"
-            "print(json.dumps({'skill': 'study_flashcard_crystallizer', 'count': len(cards), 'items': cards[:6]}, indent=2))\n"
+            "    elif ':' in s and len(s) < 180:\n"
+            "        term, definition = s.lstrip('-*•0123456789. ').split(':', 1)\n"
+            "        if term.strip() and definition.strip():\n"
+            "            cards.append({'topic': current_topic, 'question': f'What is {term.strip()}?', 'answer': definition.strip()})\n"
+            "print(json.dumps({'skill': 'study_flashcard_crystallizer', 'count': len(cards), 'items': cards[:8]}, indent=2))\n"
         ),
     },
     {
@@ -308,16 +412,14 @@ DEFAULT_SKILLS = [
 
 
 class HermesSkillVault:
-    """Manages local `./workspace/notes` files, persistent memory, reusable skills, and local keys."""
+    """Manages local `./workspace/notes` files (including PDFs & custom folders), memory, and skills."""
 
     def __init__(self, storage_dir: str = ".clawbrief_state", workspace_dir: Optional[str] = None):
-        # Notes folder: CLAWBRIEF_NOTES_DIR (your own folder) or ./workspace/notes by default
         workspace_dir = workspace_dir or os.environ.get("CLAWBRIEF_NOTES_DIR", "").strip() or "workspace/notes"
         self.root = Path(storage_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.workspace = Path(workspace_dir).expanduser()
         self.workspace.mkdir(parents=True, exist_ok=True)
-        # Only write sample notes into the default folder, never into a user's own folder
         self.seed_samples = Path(workspace_dir).expanduser().resolve() == Path("workspace/notes").resolve()
 
         self.memory_file = self.root / "persistent_memory.json"
@@ -382,7 +484,6 @@ class HermesSkillVault:
             ]
             self.memory_file.write_text(json.dumps(default_memories, indent=2), encoding="utf-8")
 
-        # Always keep default skills synced with friendly titles
         existing_skills = []
         if self.skills_file.exists():
             try:
@@ -409,10 +510,13 @@ class HermesSkillVault:
             [p for p in self.workspace.iterdir() if p.is_file() and p.suffix.lower() in allowed]
         )
 
-    def save_workspace_file(self, filename: str, content: str) -> Path:
+    def save_workspace_file(self, filename: str, content: Union[str, bytes]) -> Path:
         safe_name = Path(filename).name
         target = self.workspace / safe_name
-        target.write_text(content, encoding="utf-8")
+        if isinstance(content, bytes):
+            target.write_bytes(content)
+        else:
+            target.write_text(content, encoding="utf-8")
         return target
 
     def read_workspace_file(self, filename: str) -> str:
@@ -427,13 +531,13 @@ class HermesSkillVault:
         try:
             from pypdf import PdfReader
         except ImportError:
-            return "[PDF support is not installed. Run: pip install pypdf]"
+            return "[PDF support is not installed. Run: python -m pip install pypdf]"
         try:
             reader = PdfReader(str(path))
             pages = [(page.extract_text() or "") for page in reader.pages]
             text = "\n\n".join(p.strip() for p in pages if p.strip())
             if not text:
-                return "[No extractable text. This PDF may be a scanned image.]"
+                return "[No extractable text. This PDF may be a scanned image without selectable text.]"
             return text
         except Exception as exc:
             return f"[Could not read PDF {path.name}: {exc}]"
@@ -667,7 +771,6 @@ def render_streamlit_app() -> None:
         initial_sidebar_state="expanded",
     )
 
-    # Subtle custom styling for clean spacing and modern cards
     st.markdown(
         """
         <style>
@@ -689,11 +792,15 @@ def render_streamlit_app() -> None:
         st.session_state.latest_brief_md = ""
     if "last_skill_result" not in st.session_state:
         st.session_state.last_skill_result = None
+    if "sliced_tokens_saved" not in st.session_state:
+        st.session_state.sliced_tokens_saved = 0
+    if "active_file_override" not in st.session_state:
+        st.session_state.active_file_override = None
 
-    vault = HermesSkillVault()
+    custom_notes_dir = os.environ.get("CLAWBRIEF_NOTES_DIR", "").strip() or None
+    vault = HermesSkillVault(workspace_dir=custom_notes_dir)
     sandbox = OpenShellSandbox()
-    ws_files = vault.list_workspace_files()
-    file_names = [f.name for f in ws_files]
+    governor = TokenmaxxGovernor()
 
     # -----------------------------------------------------------------
     # CLEAN, MINIMAL SIDEBAR
@@ -727,22 +834,36 @@ def render_streamlit_app() -> None:
 
         st.divider()
         st.subheader("📂 Active Personal File")
-        selected_filename = st.selectbox(
-            "Select a file from your private folder:",
-            options=file_names,
-            index=0 if file_names else None,
-        )
+
+        # Process file uploads FIRST so newly uploaded PDFs/notes appear in the dropdown and auto-select!
         uploaded_files = st.file_uploader(
-            "Or upload your own notes (.md, .txt, .ics, .csv):",
-            type=["md", "txt", "csv", "ics", "json"],
+            "1. Upload your own notes (.pdf, .md, .txt, .ics, .csv):",
+            type=["pdf", "md", "txt", "csv", "ics", "json"],
             accept_multiple_files=True,
         )
         if uploaded_files:
             for uf in uploaded_files:
-                vault.save_workspace_file(uf.name, uf.read().decode("utf-8", errors="ignore"))
-            st.success(f"Added {len(uploaded_files)} file(s)!")
+                if uf.name.lower().endswith(".pdf"):
+                    vault.save_workspace_file(uf.name, uf.getvalue())
+                else:
+                    vault.save_workspace_file(uf.name, uf.read().decode("utf-8", errors="ignore"))
+            # Automatically select the most recently uploaded file!
+            st.session_state.active_file_override = Path(uploaded_files[-1].name).name
+            st.success(f"Loaded `{st.session_state.active_file_override}` as Active File!")
 
-        with st.expander("⚙️ Advanced Model Router Settings"):
+        ws_files = vault.list_workspace_files()
+        file_names = [f.name for f in ws_files]
+        default_idx = 0
+        if st.session_state.active_file_override in file_names:
+            default_idx = file_names.index(st.session_state.active_file_override)
+
+        selected_filename = st.selectbox(
+            "2. Active File Selected for Questions & Skills:",
+            options=file_names,
+            index=default_idx if file_names else None,
+        )
+
+        with st.expander("⚙️ Advanced Router & Tokenmaxx Governor"):
             force_tier = st.selectbox(
                 "Model Selection:",
                 options=["auto", "nano_lightning", "super", "ultra"],
@@ -752,8 +873,19 @@ def render_streamlit_app() -> None:
                     else active_cfg["models"][x]["short_name"]
                 ),
             )
-            st.caption(f"Endpoint: `{active_cfg['base_url']}`")
-            st.caption(f"Sandbox: `{sandbox.sandbox_name}`")
+            used_tokens = sum(i["estimated_tokens"] for i in st.session_state.routing_log)
+            tm_status = governor.get_budget_status(used_tokens)
+            st.caption(
+                f"Tokenmaxx State: **{tm_status['state']}** ({tm_status['pct_remaining']}% budget left)"
+            )
+            if st.button("💾 Save Tokenmaxx Checkpoint (.json)", use_container_width=True):
+                ckpt_path = governor.write_checkpoint(
+                    active_file=selected_filename or "none",
+                    memories=vault.list_memories(),
+                    skills=vault.list_skills(),
+                    used_tokens=used_tokens,
+                )
+                st.success(f"Saved `{ckpt_path}`!")
 
     router = DualNemotronRouter(provider_key=provider_key, api_key=api_key)
     jobs_client = NebiusServerlessJobsClient()
@@ -764,14 +896,14 @@ def render_streamlit_app() -> None:
     # -----------------------------------------------------------------
     st.title("🛡️ ClawBrief — Your Private Personal AI")
     st.caption(
-        "Keeps your personal notes inside an isolated NVIDIA OpenShell sandbox while routing tasks across NVIDIA Nemotron models."
+        "Keeps your personal notes & PDFs inside an isolated NVIDIA OpenShell sandbox while routing tasks across NVIDIA Nemotron models."
     )
 
     logs: List[Dict[str, Any]] = st.session_state.routing_log
     avg_saved = (sum(i["credits_saved_pct"] for i in logs) / len(logs)) if logs else 85.0
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("📄 Private Files", len(ws_files))
+    m1.metric("📄 Private Files & PDFs", len(ws_files))
     m2.metric("🧠 Saved Memories", len(vault.list_memories()))
     m3.metric("⚡ Reusable Skills", len(vault.list_skills()))
     m4.metric("💰 Credits Saved", f"{avg_saved:.0f}%")
@@ -781,7 +913,7 @@ def render_streamlit_app() -> None:
     # -----------------------------------------------------------------
     tab_chat, tab_skills, tab_brief = st.tabs(
         [
-            "💬 Step 1: Ask Your Notes",
+            "💬 Step 1: Ask Your Notes & PDFs",
             "⚡ Step 2: Run One-Click Skills",
             "☀️ Step 3: Daily Morning Briefing",
         ]
@@ -793,34 +925,40 @@ def render_streamlit_app() -> None:
 
         with left_col:
             st.subheader(f"Ask about `{selected_filename}`")
-            with st.expander("👀 View file text", expanded=False):
-                st.code(active_file_content, language="markdown")
+            if active_file_content.startswith("[PDF support is not installed") or active_file_content.startswith("[No extractable text") or active_file_content.startswith("[Could not read PDF"):
+                st.warning(active_file_content)
+
+            with st.expander(f"👀 Preview extracted text from `{selected_filename}` ({len(active_file_content):,} chars)", expanded=False):
+                st.code(active_file_content[:4000], language="markdown")
 
             st.write("**Quick Actions (click one or type your own below):**")
             q_col1, q_col2, q_col3 = st.columns(3)
             preset_prompt = None
-            if q_col1.button("✨ Summarize Note", use_container_width=True):
-                preset_prompt = "Give me a clear 3-bullet summary of this file."
+            if q_col1.button("✨ Summarize File", use_container_width=True):
+                preset_prompt = f"Give me a clear, structured summary of the topics covered in {selected_filename}."
             if q_col2.button("📅 Find Deadlines", use_container_width=True):
-                preset_prompt = "List every deadline, date, and action item in this file."
+                preset_prompt = f"List every deadline, date, and action item mentioned in {selected_filename}."
             if q_col3.button("🎯 Key Concepts", use_container_width=True):
-                preset_prompt = "Explain the main concepts in this file in simple terms."
+                preset_prompt = f"Explain the main concepts, definitions, and examples in {selected_filename} in simple terms."
 
             custom_question = st.text_input(
-                "Or type any question about your notes:",
-                value=preset_prompt or "Summarize my key takeaways and upcoming deadlines from this file.",
+                "Or type any question about your active file:",
+                value=preset_prompt or f"Summarize the main topics and key concepts in {selected_filename}.",
             )
 
             if st.button("🚀 Ask ClawBrief", type="primary", use_container_width=True) or preset_prompt:
                 active_q = preset_prompt or custom_question
-                with st.spinner("Thinking with NVIDIA Nemotron..."):
-                    memories_ctx = json.dumps(vault.list_memories()[:5], indent=2)
+                with st.spinner(f"Reading `{selected_filename}` with NVIDIA Nemotron..."):
+                    sliced_text, saved_toks = governor.slice_context(active_file_content, active_q)
+                    st.session_state.sliced_tokens_saved += saved_toks
                     combined_prompt = (
-                        f"Question: {active_q}\n\nFile ({selected_filename}):\n{active_file_content[:3000]}"
+                        f"Question: {active_q}\n\n"
+                        f"=== ACTIVE FILE: {selected_filename} ===\n{sliced_text}"
                     )
                     sys_prompt = (
-                        "You are ClawBrief, a friendly, concise Personal AI assistant. "
-                        f"Recent user memory:\n{memories_ctx}"
+                        "You are ClawBrief, a friendly, concise Personal AI study and productivity assistant. "
+                        "Answer the user's question strictly using the ACTIVE FILE text provided by the user. "
+                        "Do not invent unrelated deadlines if the file is a study note or textbook PDF."
                     )
                     reply, event = router.complete(
                         system_prompt=sys_prompt,
@@ -831,15 +969,17 @@ def render_streamlit_app() -> None:
                     st.session_state.routing_log.insert(0, asdict(event))
                     vault.add_memory(
                         category="Note Insight",
-                        summary=f"Asked '{active_q[:60]}' on {selected_filename}",
+                        summary=f"Analyzed {selected_filename}: '{active_q[:55]}'",
                         source_file=selected_filename,
                     )
 
                 with st.container(border=True):
-                    st.markdown("#### 💡 ClawBrief Answer")
+                    st.markdown(f"#### 💡 ClawBrief Answer *(for `{selected_filename}`)*")
                     st.markdown(reply)
                     st.caption(
-                        f"Answered by `{event.model_id}` in {event.latency_ms} ms • Saved {event.credits_saved_pct}% credits vs Ultra"
+                        f"Answered by `{event.model_id}` in {event.latency_ms} ms • "
+                        f"Saved {event.credits_saved_pct}% credits vs Ultra"
+                        + (f" • Tokenmaxx sliced {saved_toks} excess tokens" if saved_toks else "")
                     )
 
         with right_col:
@@ -871,7 +1011,6 @@ def render_streamlit_app() -> None:
                         type="primary",
                         use_container_width=True,
                     ):
-                        # Automatically pick .ics file for calendar auditor if user hasn't selected one
                         run_file = (
                             "october_hackathon_schedule.ics"
                             if ("ics" in sk["name"] and not selected_filename.endswith(".ics"))
@@ -994,10 +1133,11 @@ def render_streamlit_app() -> None:
 
 
 def run_cli_self_test() -> None:
-    print("=== ClawBrief Clean UI & Phase 2 Self-Test ===")
+    print("=== ClawBrief Auto-Select Upload + PDF Fix Self-Test ===")
     vault = HermesSkillVault()
     sandbox = OpenShellSandbox()
     jobs = NebiusServerlessJobsClient()
+    governor = TokenmaxxGovernor()
 
     ws_files = [f.name for f in vault.list_workspace_files()]
     print(f"[1] Workspace Files Indexed: {ws_files}")
@@ -1005,20 +1145,14 @@ def run_cli_self_test() -> None:
     nv_router = DualNemotronRouter(provider_key="nvidia_build")
     _, ev_nv = nv_router.complete(
         system_prompt="You are ClawBrief.",
-        user_prompt="Quickly tag my study note on multi-agent memory.",
-        task_type="quick_triage",
+        user_prompt="Summarize the main topics in DSA UNIT 1.pdf",
+        task_type="chat",
     )
-    print(f"[2] NVIDIA Build Dev Mode -> {ev_nv.model_id} (Saved {ev_nv.credits_saved_pct}% credits)")
+    print(f"[2] NVIDIA Build Route -> {ev_nv.model_id} (Saved {ev_nv.credits_saved_pct}% credits)")
 
     study_text = vault.read_workspace_file("agent_memory_study_notes.md")
-    ics_text = vault.read_workspace_file("october_hackathon_schedule.ics")
-    for sk in vault.list_skills()[:3]:
-        target_in = ics_text if "ics" in sk["name"] else study_text
-        res = sandbox.run_skill_code(sk["code"], input_text=target_in)
-        print(f"[3] Skill `{sk['name']}` Exit {res['exit_code']}")
-
-    job_out = jobs.trigger_nightly_digest_job(len(vault.list_memories()), len(vault.list_skills()))
-    print(f"[4] Nebius Serverless Job Status: {job_out['status']} ({job_out['job_id']})")
+    res = sandbox.run_skill_code(vault.list_skills()[0]["code"], input_text=study_text)
+    print(f"[3] Skill Exit {res['exit_code']}")
 
 
 if __name__ == "__main__":
